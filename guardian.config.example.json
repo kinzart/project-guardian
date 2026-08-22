@@ -1,0 +1,21 @@
+{
+  "scanRoots": [],
+  "exclude": ["node_modules", ".git", "dist", "build", "coverage", ".cache"],
+  "activityThresholds": {
+    "activeHours": 48,
+    "warmDays": 7,
+    "staleDays": 30
+  },
+  "service": {
+    "reconciliationTimes": ["08:00", "15:00", "22:00"],
+    "logRetentionDays": 30,
+    "maxLogBytes": 52428800
+  },
+  "obsidian": {
+    "vaultPath": null,
+    "debounceMs": 2000
+  },
+  "conversation": {
+    "provider": null
+  }
+}

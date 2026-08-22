@@ -1,0 +1,8 @@
+node_modules/
+data/
+reports/
+logs/
+guardian.config.json
+*.log
+*.tgz
+coverage/

@@ -1,0 +1,11 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { interpretQuestion, runStructuredQuery, synthesizeDeterministically } from '../src/query/engine.js';
+
+const projects = [{ id: 'a', name: 'Alpha', status: { completion_state: 'IN_PROGRESS' } }, { id: 'b', name: 'Beta', status: { completion_state: 'DONE' } }];
+const states = [{ project_id: 'a', operational_status: 'ACTIVE_NOW', current_focus: { value: 'ship', evidence: [{ source: 'handoff' }] }, active_agents: ['CODEX'], open_blockers: [], next_actions: [], confidence: 'HIGH', evidence: [{ source: 'agent_session' }], last_meaningful_activity: '2026-08-21T10:00:00Z' }, { project_id: 'b', operational_status: 'BLOCKED', current_focus: { value: null, evidence: [] }, open_blockers: [{ text: 'access' }], next_actions: [], confidence: 'HIGH', evidence: [{ source: 'AUM' }] }];
+
+test('query engine: active and blocked facts are deterministic and evidence-bearing', () => { const active = runStructuredQuery({ type: 'active', projects, runtimeStates: states }); assert.equal(active.length, 1); assert.equal(active[0].project, 'Alpha'); assert.equal(active[0].confidence, 'HIGH'); assert.ok(active[0].evidence.length); const blocked = runStructuredQuery({ type: 'blocked', projects, runtimeStates: states }); assert.deepEqual(blocked[0].blockers, ['access']); });
+test('query engine: UNKNOWN is preserved when facts are absent', () => { const [f] = runStructuredQuery({ type: 'all', projects: [projects[0]], runtimeStates: [] }); assert.equal(f.operational_status, 'UNKNOWN'); assert.equal(f.current_focus, 'UNKNOWN'); });
+test('ask: facts are produced before synthesis and recommendation is separately labeled', () => { const facts = runStructuredQuery({ type: 'all', projects, runtimeStates: states }); const out = synthesizeDeterministically({ question: 'qual priorizar?', facts, intent: 'recommend' }); assert.match(out.answer, /Alpha/); assert.match(out.recommendation, /^Recomendação:/); });
+test('ask: common Portuguese intents map to structured queries', () => { assert.equal(interpretQuestion('no que estou trabalhando?').type, 'active'); assert.equal(interpretQuestion('o que está bloqueado?').type, 'blocked'); assert.equal(interpretQuestion('qual projeto priorizar?').intent, 'recommend'); });

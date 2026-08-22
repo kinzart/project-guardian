@@ -1,0 +1,51 @@
+{
+  "name": "@kinzart/project-guardian",
+  "version": "1.0.0",
+  "description": "Local, Windows-first project inventory and cross-agent activity supervisor.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Kinzart",
+  "homepage": "https://github.com/kinzart/project-guardian#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kinzart/project-guardian.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kinzart/project-guardian/issues"
+  },
+  "keywords": [
+    "project-management",
+    "developer-tools",
+    "codex",
+    "claude-code",
+    "obsidian",
+    "windows"
+  ],
+  "bin": {
+    "guardian": "./bin/guardian.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE",
+    "INSTALL.md",
+    "UNINSTALL.md",
+    "RECOVERY.md",
+    "SECURITY.md",
+    "PRIVACY.md",
+    "TROUBLESHOOTING.md",
+    "ARCHITECTURE.md",
+    "guardian.config.example.json"
+  ],
+  "scripts": {
+    "guardian": "node ./bin/guardian.js",
+    "test": "node --test --test-concurrency=1 test/"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
