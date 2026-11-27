@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { stableProjectId } from '../util/paths.js';
 
 const norm = (p) => String(p).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
@@ -37,7 +38,8 @@ export function projectFolderFor(p, roots, strongTopLevel, strongPaths = []) {
   while (level < parts.length) {
     const nf = norm(parts.slice(0, level).join('/'));
     if (strongPaths.includes(nf)) break;
-    const kids = new Set(strongPaths.filter((sp) => sp.startsWith(`${nf}/`)).map((sp) => sp.slice(nf.length + 1).split('/')[0]));
+    // only direct children that are themselves real projects count (not outputs deeper inside)
+    const kids = new Set(strongPaths.filter((sp) => sp.startsWith(`${nf}/`) && !sp.slice(nf.length + 1).includes('/')).map((sp) => sp.slice(nf.length + 1)));
     if (kids.size < 2 || !kids.has(parts[level].toLowerCase())) break;
     area = joinLike(p, parts.slice(0, level));
     level += 1;
@@ -47,7 +49,9 @@ export function projectFolderFor(p, roots, strongTopLevel, strongPaths = []) {
 
 // Folds every detected folder (and every folder an AI agent worked in) into its project folder.
 // Returns the items to show, what each item contains (deeper folders) and the area of each item.
-export function groupProjects(projects, roots = [], sessions = []) {
+export function groupProjects(projects, roots = [], allSessions = [], { exists = existsSync } = {}) {
+  // sessions whose folder no longer exists don't create projects
+  const sessions = allSessions.filter((s) => s.cwd && exists(s.cwd));
   const strongTopLevel = new Set();
   for (const p of projects) {
     const root = rootOf(p.root_path, roots);

@@ -57,7 +57,7 @@ const norm = (p) => String(p).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, 
 // agent ran in a parent folder of the projects (e.g. D:\APPS\X with the project at X\app),
 // the session is attached to the projects under that folder, if there are at most
 // MAX_CHILD_MATCHES of them.
-export const MAX_CHILD_MATCHES = 3;
+export const MAX_CHILD_MATCHES = 1;
 export function mapSessionsToProjects(sessions, projects) {
   const roots = projects.map((p) => ({ id: p.id, root: norm(p.root_path) })).sort((a, b) => b.root.length - a.root.length);
   const map = new Map();

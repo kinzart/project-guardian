@@ -43,7 +43,8 @@ test('agent sessions inside an area create the project folder; area-level sessio
     { cwd: 'D:\\APPS E PROGRAMAS\\APLICATIVO DE SLIDES\\src', agent: 'codex' },
     { cwd: 'D:\\APPS E PROGRAMAS', agent: 'claude' },
     { cwd: 'C:\\Users\\kinza', agent: 'claude' },
-  ]);
+    { cwd: 'D:\\APPS E PROGRAMAS\\SUMIU', agent: 'hermes' },
+  ], { exists: (p) => !p.includes('SUMIU') });
   assert.deepEqual(items.map((i) => i.name), ['APLICATIVO DE SLIDES']);
   assert.equal(items[0].kind, 'code');
 });
@@ -91,6 +92,17 @@ test('vault: ignorar hides a project in its own section', () => {
 });
 
 test('agent work folders count as real projects inside a container', () => {
-  const { items } = groupProjects([real('mm', 'D:\\APPS\\PLATAFORMA\\MIX MASTER')], roots, [{ cwd: 'D:\\APPS\\PLATAFORMA\\SEPARADOR' }]);
+  const { items } = groupProjects([real('mm', 'D:\\APPS\\PLATAFORMA\\MIX MASTER')], roots, [{ cwd: 'D:\\APPS\\PLATAFORMA\\SEPARADOR' }], { exists: () => true });
   assert.deepEqual(items.map((i) => i.name).sort(), ['MIX MASTER', 'SEPARADOR']);
+});
+
+test('output folders with DAW files deep inside a container stay content', () => {
+  const projects = [
+    real('mm', 'D:\\APPS\\PLATAFORMA\\MIX MASTER'), real('co', 'D:\\APPS\\PLATAFORMA\\CORTADOR'),
+    real('f1', 'D:\\APPS\\PLATAFORMA\\SAIDAS\\Faixa a\\FL Studio'), real('f2', 'D:\\APPS\\PLATAFORMA\\SAIDAS\\Faixa b\\FL Studio'),
+    real('ref', 'D:\\APPS\\PLATAFORMA\\SAIDAS\\_ref'),
+  ];
+  const { items, childrenOf } = groupProjects(projects, roots);
+  assert.deepEqual(items.map((i) => i.name).sort(), ['CORTADOR', 'MIX MASTER', 'PLATAFORMA']);
+  assert.equal(childrenOf.get(items.find((i) => i.name === 'PLATAFORMA').id).length, 3);
 });

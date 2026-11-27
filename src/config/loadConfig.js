@@ -60,6 +60,13 @@ const DEFAULTS = {
     '_internal',
     'site-packages',
     'npm-global',
+    'npm-cache',
+    '_npx',
+    '_cacache',
+    'steamapps',
+    'appcache',
+    'tmp',
+    'temp',
   ],
   // Compound path suffixes (not bare directory names) excluded only in this specific nested
   // location — e.g. a real project may legitimately have its own "extensions" folder, so only
