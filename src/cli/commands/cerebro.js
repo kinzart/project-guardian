@@ -42,7 +42,13 @@ export async function cerebroCommand({ projectRoot, args, store: suppliedStore =
     if (sub === 'remove') { for (const f of ruleFiles(config)) console.log(`${removeRule(f) ? 'regra removida' : 'sem regra'}: ${f}`); return true; }
   }
   if (action === 'nightly' || action === 'suggest') {
-    const created = suppliedStore ? null : await createStore(path.join(projectRoot, 'data', 'guardian.db'));
+    let created = null;
+    try {
+      created = suppliedStore ? null : await createStore(path.join(projectRoot, 'data', 'guardian.db'));
+    } catch (e) {
+      if (/locked/i.test(e.message)) { console.error('O serviço do Guardian está usando o banco. A rodada noturna já acontece dentro do serviço; para rodar agora: guardian service stop, guardian cerebro nightly, guardian service start.'); process.exitCode = 1; return null; }
+      throw e;
+    }
     const store = suppliedStore || created.store;
     try {
       const result = action === 'nightly' ? await nightly({ projectRoot, store, config }) : await suggestNow({ projectRoot, store, config });

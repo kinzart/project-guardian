@@ -103,7 +103,7 @@ const DEFAULTS = {
   service: { reconciliationTimes: ['08:00', '15:00', '22:00'], logRetentionDays: 30, maxLogBytes: 52428800 },
   // Cérebro hub: archiveDays = no change for this long marks a project "Arquivo — não mexer";
   // nightlyTime = full scan + render + AI suggestions; suggestCommand = CLI that reads the
-  // inventory digest on stdin and prints suggestions (e.g. "codex exec -"), null to skip.
+  // inventory digest on stdin and prints suggestions (e.g. "codex exec --skip-git-repo-check -"), null to skip.
   cerebro: { archiveDays: 365, nightlyTime: '03:00', suggestCommand: null },
 };
 

@@ -53,7 +53,11 @@ export async function indexSessions({ codexHome, claudeHome, hermesHome, cachePa
 
 const norm = (p) => String(p).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
 
-// Map sessions to the project whose root is the longest prefix of the session cwd.
+// Map sessions to the project whose root is the longest prefix of the session cwd. When the
+// agent ran in a parent folder of the projects (e.g. D:\APPS\X with the project at X\app),
+// the session is attached to the projects under that folder, if there are at most
+// MAX_CHILD_MATCHES of them.
+export const MAX_CHILD_MATCHES = 3;
 export function mapSessionsToProjects(sessions, projects) {
   const roots = projects.map((p) => ({ id: p.id, root: norm(p.root_path) })).sort((a, b) => b.root.length - a.root.length);
   const map = new Map();
@@ -61,9 +65,12 @@ export function mapSessionsToProjects(sessions, projects) {
     if (!s.cwd) continue;
     const cwd = norm(s.cwd);
     const hit = roots.find((r) => cwd === r.root || cwd.startsWith(`${r.root}/`));
-    if (!hit) continue;
-    if (!map.has(hit.id)) map.set(hit.id, []);
-    map.get(hit.id).push(s);
+    const targets = hit ? [hit] : roots.filter((r) => r.root.startsWith(`${cwd}/`));
+    if (!targets.length || targets.length > MAX_CHILD_MATCHES) continue;
+    for (const t of targets) {
+      if (!map.has(t.id)) map.set(t.id, []);
+      map.get(t.id).push(s);
+    }
   }
   for (const list of map.values()) list.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
   return map;

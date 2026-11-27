@@ -89,3 +89,10 @@ test('map: longest root wins, case and slash insensitive', () => {
   const m = mapSessionsToProjects(sessions, projects);
   assert.equal(m.get('b').length, 1); assert.equal(m.get('a').length, 1);
 });
+
+test('map: session in a parent folder attaches to its few child projects', () => {
+  const projects = [{ id: 'app', root_path: 'D:\\APPS\\X\\app' }, ...['1', '2', '3', '4'].map((n) => ({ id: n, root_path: `D:\\BIG\\p${n}` }))];
+  const m = mapSessionsToProjects([{ cwd: 'D:\\APPS\\X', updated_at: '2026-01-01' }, { cwd: 'D:\\BIG', updated_at: '2026-01-01' }], projects);
+  assert.equal(m.get('app').length, 1);
+  assert.equal(m.has('1'), false);
+});

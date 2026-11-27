@@ -10,4 +10,4 @@ When an Obsidian vault is configured, `guardian obsidian render` reads Codex, Cl
 
 Under `metadataOnlyRoots` (for example a Google Drive streaming mount) Guardian only lists and stats entries; it never opens a file there, so cloud-only files are not downloaded.
 
-If `cerebro.suggestCommand` is set, the nightly run sends a one-line-per-project digest (name, type, dates, last agent, path) to that command, which may be a cloud AI CLI such as Codex. Leave it `null` to keep everything offline.
+If `cerebro.suggestCommand` is set, the nightly run sends a one-line-per-project digest (name, type, dates, last agent, path) to that command, which may be a cloud AI CLI such as `codex exec --skip-git-repo-check -`. Leave it `null` to keep everything offline.
