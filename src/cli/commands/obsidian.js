@@ -3,7 +3,33 @@ import path from 'node:path';
 import { loadConfig } from '../../config/loadConfig.js';
 import { createStore } from '../../store/createStore.js';
 import { refreshRuntimeStates } from '../../activity/runtime-rollup.js';
-import { renderObsidianDashboard } from '../../obsidian/renderer.js';
+import os from 'node:os';
+import { renderCerebroVault } from '../../obsidian/cerebro.js';
+import { indexSessions, mapSessionsToProjects } from '../../sessions/index.js';
+
+export function agentHomes(config) {
+  const home = os.homedir();
+  const local = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  return {
+    codexHome: config.cerebro?.codexHome || process.env.CODEX_HOME || path.join(home, '.codex'),
+    claudeHome: config.cerebro?.claudeHome || process.env.CLAUDE_CONFIG_DIR || path.join(home, '.claude'),
+    hermesHome: config.cerebro?.hermesHome || process.env.HERMES_HOME || path.join(local, 'hermes'),
+  };
+}
+
+export async function renderVault({ projectRoot, config, projects, runtimeStates, intelligence, homes = agentHomes(config), now = Date.now() }) {
+  const sessions = await indexSessions({ ...homes, cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
+  return renderCerebroVault({
+    vaultPath: config.obsidian.vaultPath,
+    projects,
+    runtimeStates,
+    intelligence,
+    sessionsByProject: mapSessionsToProjects(sessions, projects),
+    roots: config.scanRoots || [],
+    now,
+    archiveDays: config.cerebro?.archiveDays ?? 365,
+  });
+}
 
 function configured(config) { return Boolean(config.obsidian?.vaultPath); }
 
@@ -21,7 +47,7 @@ export async function obsidianCommand({ projectRoot, args, store: suppliedStore 
     if (!configured(config)) { console.error('Obsidian vault is not configured. Run `guardian obsidian configure <existing-vault-path>`.'); process.exitCode = 1; return null; }
     const store = suppliedStore || (await createStore(path.join(projectRoot, 'data', 'guardian.db'))).store;
     const runtimeStates = await refreshRuntimeStates(store); const projects = await store.listProjects(); const intelligence = await store.listIntelligence(); if (!suppliedStore) await store.close();
-    const result = renderObsidianDashboard({ vaultPath: config.obsidian.vaultPath, projects, runtimeStates, intelligence });
+    const result = await renderVault({ projectRoot, config, projects, runtimeStates, intelligence });
     console.log(`Obsidian dashboard ${result.changed ? 'updated' : 'unchanged'}: ${result.projectsRendered} project(s)`); return result;
   }
   console.error('Usage: guardian obsidian <status|configure|render>'); process.exitCode = 1; return null;
