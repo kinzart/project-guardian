@@ -7,6 +7,27 @@ import { indexSessions, mapSessionsToProjects } from '../../sessions/index.js';
 import { findDuplicateGroups } from '../../cerebro/duplicates.js';
 import { buildInventoryDigest, runSuggestions } from '../../cerebro/suggest.js';
 import { installRule, removeRule } from '../../cerebro/rule.js';
+import { cleanup } from '../../cerebro/cleanup.js';
+import { appendFileSync, mkdirSync } from 'node:fs';
+
+const ACTION_LABEL = { lixeira: 'enviado para a Lixeira', recusado: 'NÃO apagado', erro: 'erro', pendente: 'vai para a Lixeira' };
+
+export async function limpar({ projectRoot, store, config, confirm, recycle }) {
+  const rendered = await obsidianCommand({ projectRoot, args: ['render'], store, config });
+  const marked = rendered?.marked || [];
+  if (!marked.length) { console.log('Nenhum projeto marcado para excluir (propriedade "excluir" ou #apagar).'); return []; }
+  const results = cleanup(marked, { roots: config.scanRoots || [], projects: await store.listProjects(), confirm, recycle });
+  for (const r of results) console.log(`- ${r.project.name} (${r.project.root_path}): ${ACTION_LABEL[r.action]}${r.reason ? ` — ${r.reason}` : ''}`);
+  if (!confirm) console.log('\nNada foi apagado. Confira a lista e rode: guardian cerebro limpar --confirmar');
+  else {
+    const log = path.join(config.obsidian.vaultPath, 'Project Guardian', 'Limpeza.md');
+    mkdirSync(path.dirname(log), { recursive: true });
+    appendFileSync(log, `\n## ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n${results.map((r) => `- ${r.project.name} — ${r.project.root_path}: ${ACTION_LABEL[r.action]}${r.reason ? ` (${r.reason})` : ''}`).join('\n')}\n`);
+    for (const r of results) if (r.action === 'lixeira') await store.removeProject(r.project.id);
+    if (results.some((r) => r.action === 'lixeira')) await scanCommand({ projectRoot, store, config }).then(() => obsidianCommand({ projectRoot, args: ['render'], store, config }));
+  }
+  return results;
+}
 
 export async function suggestNow({ projectRoot, store, config }) {
   if (!config.cerebro?.suggestCommand || !config.obsidian?.vaultPath) return null;
@@ -41,7 +62,7 @@ export async function cerebroCommand({ projectRoot, args, store: suppliedStore =
     }
     if (sub === 'remove') { for (const f of ruleFiles(config)) console.log(`${removeRule(f) ? 'regra removida' : 'sem regra'}: ${f}`); return true; }
   }
-  if (action === 'nightly' || action === 'suggest') {
+  if (action === 'nightly' || action === 'suggest' || action === 'limpar') {
     let created = null;
     try {
       created = suppliedStore ? null : await createStore(path.join(projectRoot, 'data', 'guardian.db'));
@@ -51,10 +72,11 @@ export async function cerebroCommand({ projectRoot, args, store: suppliedStore =
     }
     const store = suppliedStore || created.store;
     try {
+      if (action === 'limpar') return await limpar({ projectRoot, store, config, confirm: args.includes('--confirmar') });
       const result = action === 'nightly' ? await nightly({ projectRoot, store, config }) : await suggestNow({ projectRoot, store, config });
       console.log(`Cérebro ${action}: ${JSON.stringify(result)}`);
       return result;
     } finally { if (created) await store.close(); }
   }
-  console.error('Usage: guardian cerebro <nightly|suggest|rule install|rule remove>'); process.exitCode = 1; return null;
+  console.error('Usage: guardian cerebro <nightly|suggest|limpar [--confirmar]|rule install|rule remove>'); process.exitCode = 1; return null;
 }

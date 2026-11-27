@@ -348,13 +348,19 @@ export async function runScan({ config, store, logger, roots }) {
   // directory itself is gone). Skipped entirely if the walk hit any error — including the
   // maxDirectoriesVisited safety cap — since an incomplete walk must never be mistaken for
   // "this project no longer exists" and cause a false deletion.
+  // A permission error on one folder (e.g. D:\\Config.Msi) only makes the walk incomplete for
+  // what lies under that folder, so pruning still runs elsewhere; any other error (including the
+  // visit cap) skips pruning entirely.
   let projectsPruned = 0;
-  if (walkErrors.length === 0) {
+  const unreadable = walkErrors.filter((e) => /EPERM|EACCES/.test(e.message)).map((e) => e.path);
+  const walkIncomplete = walkErrors.some((e) => !/EPERM|EACCES/.test(e.message));
+  if (!walkIncomplete) {
     const candidateRootPaths = new Set(baseInfos.map((b) => b.dirPath));
     const existingProjects = await store.listProjects();
     for (const p of existingProjects) {
       if (candidateRootPaths.has(p.root_path)) continue;
       if (!roots.some((r) => isUnderRoot(p.root_path, r))) continue;
+      if (unreadable.some((u) => isUnderRoot(p.root_path, u) || isUnderRoot(u, p.root_path))) continue;
       await store.removeProject(p.id);
       projectsPruned += 1;
       logger.info('pruned stale project no longer detected under scanned roots', { path: p.root_path });

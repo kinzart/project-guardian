@@ -49,7 +49,7 @@ guardian cerebro rule install             # asks Codex/Claude to log a short sum
 guardian cerebro nightly                  # scan + render + AI suggestions (Sugestões.md)
 ```
 
-Each project note shows status, last change (and which file), the universal summary, the last AI session (Codex, Claude Code or Hermes) with its final message and a **▶ Retomar** link that reopens that exact session in the project folder. Projects untouched for `cerebro.archiveDays` (365) are listed as "Arquivo — não mexer". Nothing in your project folders is moved, changed or deleted. Set `metadataOnlyRoots` for Google Drive so nothing is downloaded.
+Each project note shows status, last change (and which file), the universal summary, the last AI session (Codex, Claude Code or Hermes) with its final message and a **▶ Retomar** link that reopens that exact session in the project folder. To delete a project, tick the **excluir** property in its note (or write `#apagar` under "Minhas notas"), then run `guardian cerebro limpar` to see the list and `guardian cerebro limpar --confirmar` to send those folders to the Windows Recycle Bin. Drive roots, scanned roots and folders holding other unmarked projects are refused. Projects untouched for `cerebro.archiveDays` (365) are listed as "Arquivo — não mexer". Nothing in your project folders is moved, changed or deleted. Set `metadataOnlyRoots` for Google Drive so nothing is downloaded.
 
 ## Privacy
 

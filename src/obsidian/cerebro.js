@@ -21,6 +21,21 @@ function splitFrontmatter(text) {
   return end >= 0 ? text.slice(end + 5) : text;
 }
 
+// True when the person ticked the "excluir" property or wrote #apagar outside the generated block.
+export function readDeleteMark(file) {
+  if (!existsSync(file)) return false;
+  const text = readFileSync(file, 'utf8');
+  if (text.startsWith('---\n')) {
+    const end = text.indexOf('\n---\n', 4);
+    const fm = end >= 0 ? text.slice(4, end) : '';
+    if (/^excluir:\s*(true|sim|yes)\s*$/im.test(fm)) return true;
+  }
+  const rest = splitFrontmatter(text);
+  const s = rest.indexOf(START); const e = rest.indexOf(END);
+  const manual = s >= 0 && e > s ? rest.slice(0, s) + rest.slice(e + END.length) : rest;
+  return /(^|\s)#apagar\b/i.test(manual);
+}
+
 function writeNote(file, { frontmatter = null, generated, initialManual = '' }) {
   const existing = existsSync(file) ? readFileSync(file, 'utf8') : null;
   const block = `${START}\n${generated.trim()}\n${END}`;
@@ -76,7 +91,8 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
   });
 
   let changed = false;
-  for (const { p, sessions, last, status, place } of rows) {
+  for (const row of rows) row.marked = readDeleteMark(path.join(root, 'Projetos', `${stem(row.p)}.md`));
+  for (const { p, sessions, last, status, place, marked } of rows) {
     const i = intel.get(p.id); const r = runtime.get(p.id);
     const latest = sessions[0] || null;
     const resumeUrl = latest ? writeLauncher(vaultPath, latest) : null;
@@ -94,6 +110,7 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
       `ultima_ia: ${yaml(latest ? agentLabel(latest.agent) : '')}`,
       `ultima_ia_em: ${yaml(latest?.updated_at ? latest.updated_at.slice(0, 10) : '')}`,
       `arquivo: ${status === 'arquivo'}`,
+      `excluir: ${marked}`,
       `caminho: ${yaml(p.root_path)}`,
     ].join('\n');
     const older = sessions.slice(1, 6).map((s) => {
@@ -142,6 +159,12 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
     '',
     `Atualizado em ${fmtDateTime(new Date(now).toISOString())} · ${projects.length} projetos · [[${ROOT}/Mapa|Mapa]] · [[${ROOT}/Duplicados|Duplicados (${duplicates.length})]] · [[${ROOT}/Sugestões|Sugestões]]`,
     '',
+    ...(rows.some((x) => x.marked) ? [
+      `## Marcados para excluir (${rows.filter((x) => x.marked).length})`,
+      '_Nada é apagado sozinho. Para mandar para a Lixeira: `guardian cerebro limpar` (mostra a lista) e depois `guardian cerebro limpar --confirmar`._',
+      ...rows.filter((x) => x.marked).map((x) => `- ${link(x.p)} — ${x.p.root_path}`),
+      '',
+    ] : []),
     ...section('Em andamento', 'andamento', '_Mexidos nos últimos 7 dias._'),
     '',
     ...section('Dá pra retomar', 'retomar', '_Parados entre 7 e 90 dias._'),
@@ -199,5 +222,5 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
   }
 
   mkdirSync(path.join(vaultPath, INBOX_DIR), { recursive: true });
-  return { root, changed, projectsRendered: projects.length, duplicates: duplicates.length, removed };
+  return { root, changed, projectsRendered: projects.length, duplicates: duplicates.length, removed, marked: rows.filter((x) => x.marked).map((x) => x.p) };
 }
