@@ -54,6 +54,12 @@ const DEFAULTS = {
     '.eclipse',
     '.android',
     '.vscode-server',
+    // Trash and bundled-runtime folders: never someone's project.
+    '.trash',
+    '.Trash-1000',
+    '_internal',
+    'site-packages',
+    'npm-global',
   ],
   // Compound path suffixes (not bare directory names) excluded only in this specific nested
   // location — e.g. a real project may legitimately have its own "extensions" folder, so only

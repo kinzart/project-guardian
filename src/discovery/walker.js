@@ -3,7 +3,7 @@ import path from 'node:path';
 import { isSecretDirName } from '../util/secrets.js';
 
 function isExcludedName(name, excludeSet) {
-  return excludeSet.has(name) || excludeSet.has(name.toLowerCase());
+  return excludeSet.has(name.toLowerCase());
 }
 
 // excludePathPatterns are pre-normalized (forward slashes, lowercase) relative path suffixes,
@@ -27,7 +27,7 @@ export function* walkPruned(
   roots,
   { exclude = [], excludePaths = [], maxDepth = 8, maxDirectoriesVisited = 50000, shouldDescend = () => true, onError = () => {} },
 ) {
-  const excludeSet = new Set(exclude);
+  const excludeSet = new Set(exclude.map((e) => String(e).toLowerCase()));
   const excludePathPatterns = excludePaths.map((p) => p.replace(/\\/g, '/').toLowerCase());
   let visited = 0;
   const queue = roots.map((root) => ({ dirPath: root, depth: 0 }));

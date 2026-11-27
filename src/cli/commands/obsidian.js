@@ -20,12 +20,12 @@ export function agentHomes(config) {
 
 export async function renderVault({ projectRoot, config, projects, runtimeStates, intelligence, homes = agentHomes(config), now = Date.now() }) {
   const sessions = await indexSessions({ ...homes, cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
-  const { items, childrenOf, parentOf } = groupProjects(projects, config.scanRoots || []);
+  const { items, childrenOf, areaOf: areaByItem } = groupProjects(projects, config.scanRoots || [], sessions);
   return renderCerebroVault({
     vaultPath: config.obsidian.vaultPath,
     projects: items,
     childrenOf,
-    parentOf,
+    areaByItem,
     runtimeStates,
     intelligence,
     sessionsByProject: mapSessionsToProjects(sessions, items),

@@ -42,8 +42,8 @@ export async function limpar({ projectRoot, store, config, confirm, recycle }) {
 
 export async function suggestNow({ projectRoot, store, config }) {
   if (!config.cerebro?.suggestCommand || !config.obsidian?.vaultPath) return null;
-  const { items: projects } = groupProjects(await store.listProjects(), config.scanRoots || []);
   const sessions = await indexSessions({ ...agentHomes(config), cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
+  const { items: projects } = groupProjects(await store.listProjects(), config.scanRoots || [], sessions);
   const digest = buildInventoryDigest(projects, mapSessionsToProjects(sessions, projects), findDuplicateGroups(projects));
   return runSuggestions({ command: config.cerebro.suggestCommand, digest, outPath: path.join(config.obsidian.vaultPath, 'Project Guardian', 'Sugestões.md') });
 }

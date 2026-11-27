@@ -6,46 +6,58 @@ import os from 'node:os';
 import { groupProjects, isLooseMedia } from '../src/cerebro/grouping.js';
 import { renderCerebroVault } from '../src/obsidian/cerebro.js';
 
-const media = (id, root_path, mtime = '2026-11-18T00:00:00Z') => ({ id, name: path.basename(root_path.replace(/\\/g, '/')), root_path, kind: 'music', evidence: ['secondary:media(+10)'], latest_entry: { name: 'a.wav', mtime }, status: {} });
-const real = (id, root_path) => ({ id, name: path.basename(root_path.replace(/\\/g, '/')), root_path, kind: 'music', evidence: ['strong:mix.song(+30)'], latest_entry: { name: 'mix.song', mtime: '2026-11-10T00:00:00Z' }, status: {} });
+const base = (id, root_path, evidence, mtime) => ({ id, name: path.basename(root_path.replace(/\\/g, '/')), root_path, kind: 'music', evidence, latest_entry: { name: 'x', mtime }, status: {} });
+const media = (id, p, mtime = '2026-11-18T00:00:00Z') => base(id, p, ['secondary:media(+10)'], mtime);
+const real = (id, p, mtime = '2026-11-10T00:00:00Z') => base(id, p, ['strong:.git(+50)'], mtime);
+const roots = ['D:\\', 'F:\\'];
 
-test('loose media folders are not projects', () => {
+test('loose media detection', () => {
   assert.equal(isLooseMedia(media('a', 'F:\\X')), true);
   assert.equal(isLooseMedia(real('b', 'F:\\Y')), false);
-  assert.equal(isLooseMedia({ id: 'c' }), false);
 });
 
-test('recordings go inside the nearest real project, else the first-level folder', () => {
+test('area folders group projects; everything deeper is content', () => {
   const projects = [
-    real('castelo', 'F:\\MUSICA\\Saida do Castelo'),
-    media('r1', 'F:\\MUSICA\\Saida do Castelo\\gravacoes\\uirec-20261118_040606'),
-    media('r2', 'F:\\MUSICA\\Saida do Castelo\\gravacoes\\uirec-20261125_042239'),
-    media('f1', 'F:\\PIC 2026\\viagem\\dia1'),
-    media('f2', 'F:\\PIC 2026\\viagem\\dia2', '2026-11-20T00:00:00Z'),
-    real('sub', 'F:\\MUSICA\\Saida do Castelo\\stems'),
+    media('r1', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\SAIDAS\\Sessoes\\RICK CASTELLO\\Faixas cortadas\\uirec-20261118_040606'),
+    media('r2', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\SAIDAS\\Sessoes\\LUIZ\\Faixas cortadas\\uirec-20261125_042239', '2026-11-25T00:00:00Z'),
+    real('sep', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\SEPARADOR'),
+    real('cort', 'D:\\APPS E PROGRAMAS\\CORTADOR'),
+    real('s1', 'D:\\HOSTINGER SITES\\site1\\public_html\\wp-content\\plugins\\a\\sodium_compat'),
+    real('s2', 'D:\\HOSTINGER SITES\\site1\\public_html\\wp-content\\plugins\\b\\sodium_compat'),
+    real('mma', 'F:\\MIX MASTER AUTO'),
+    media('mmaRec', 'F:\\MIX MASTER AUTO\\renders\\take1'),
   ];
-  const { items, childrenOf, parentOf } = groupProjects(projects, ['F:\\']);
+  const { items, childrenOf, areaOf } = groupProjects(projects, roots);
   const names = items.map((i) => i.name).sort();
-  assert.deepEqual(names, ['PIC 2026', 'Saida do Castelo', 'stems']);
-  assert.deepEqual(childrenOf.get('castelo').map((c) => c.id).sort(), ['r1', 'r2']);
-  const pic = items.find((i) => i.name === 'PIC 2026');
-  assert.equal(pic.is_folder, true); assert.equal(pic.root_path, 'F:\\PIC 2026');
-  assert.equal(childrenOf.get(pic.id).length, 2); assert.equal(pic.latest_entry.mtime, '2026-11-20T00:00:00Z');
-  assert.equal(parentOf.get('sub').id, 'castelo');
+  assert.deepEqual(names, ['CORTADOR', 'MIX MASTER AUTO', 'PLATAFORMA', 'site1']);
+  const plat = items.find((i) => i.name === 'PLATAFORMA');
+  assert.deepEqual(childrenOf.get(plat.id).map((c) => c.id).sort(), ['r1', 'r2', 'sep']);
+  assert.equal(plat.latest_entry.mtime, '2026-11-25T00:00:00Z');
+  assert.equal(areaOf.get(plat.id), 'D:\\APPS E PROGRAMAS');
+  assert.equal(childrenOf.get('mma').length, 1);
+  assert.equal(items.find((i) => i.name === 'site1').kind, 'music');
 });
 
-test('vault: parent note lists its content and the child says where it lives', () => {
+test('agent sessions inside an area create the project folder; area-level sessions do not', () => {
+  const { items } = groupProjects([], roots, [
+    { cwd: 'D:\\APPS E PROGRAMAS\\APLICATIVO DE SLIDES\\src', agent: 'codex' },
+    { cwd: 'D:\\APPS E PROGRAMAS', agent: 'claude' },
+    { cwd: 'C:\\Users\\kinza', agent: 'claude' },
+  ]);
+  assert.deepEqual(items.map((i) => i.name), ['APLICATIVO DE SLIDES']);
+  assert.equal(items[0].kind, 'code');
+});
+
+test('vault: project note shows content with relative paths and its area', () => {
   const v = mkdtempSync(path.join(os.tmpdir(), 'cerebro-g-')); mkdirSync(path.join(v, '.obsidian'));
   try {
-    const { items, childrenOf, parentOf } = groupProjects([
-      real('castelo', 'F:\\MUSICA\\Saida do Castelo'), real('sub', 'F:\\MUSICA\\Saida do Castelo\\stems'),
-      media('r1', 'F:\\MUSICA\\Saida do Castelo\\gravacoes\\uirec-20261118_040606'),
-    ], ['F:\\']);
-    renderCerebroVault({ vaultPath: v, projects: items, childrenOf, parentOf, roots: ['F:\\'], now: Date.parse('2026-11-27T00:00:00Z') });
-    const read = (f) => readFileSync(path.join(v, 'Project Guardian', f), 'utf8');
-    assert.match(read('Projetos/Saida do Castelo.md'), /## Conteúdo \(1 pastas\)\n- \[uirec-20261118_040606\]/);
-    assert.match(read('Projetos/stems.md'), /## Está dentro de\n- \[\[Project Guardian\/Projetos\/Saida do Castelo\|/);
-    assert.doesNotMatch(read('Painel.md'), /uirec/);
-    assert.match(read('Mapa.md'), /- \[\[[^\n]*Saida do Castelo[^\n]*\n    - \[\[[^\n]*stems/);
+    const { items, childrenOf, areaOf } = groupProjects([
+      media('r1', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\SAIDAS\\Sessoes\\RICK CASTELLO\\Faixas cortadas\\uirec-20261118_040606'),
+    ], roots);
+    renderCerebroVault({ vaultPath: v, projects: items, childrenOf, areaByItem: areaOf, roots, now: Date.parse('2026-11-27T00:00:00Z') });
+    const note = readFileSync(path.join(v, 'Project Guardian', 'Projetos', 'PLATAFORMA.md'), 'utf8');
+    assert.match(note, /## Está dentro de\n- \[`D:\\APPS E PROGRAMAS`\]/);
+    assert.match(note, /\[SAIDAS › Sessoes › RICK CASTELLO › Faixas cortadas › uirec-20261118_040606\]/);
+    assert.doesNotMatch(readFileSync(path.join(v, 'Project Guardian', 'Painel.md'), 'utf8'), /uirec/);
   } finally { rmSync(v, { recursive: true, force: true }); }
 });

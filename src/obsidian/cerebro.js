@@ -7,6 +7,7 @@ import { START, END } from './renderer.js';
 import { fileUrl, writeLauncher } from '../cerebro/launchers.js';
 import { buildUniversalSummary, daysSince, isArchived, kindLabel, lastActivityIso, readInbox, safeName, INBOX_DIR } from '../cerebro/summary.js';
 import { findDuplicateGroups } from '../cerebro/duplicates.js';
+import { relativeLabel } from '../cerebro/grouping.js';
 
 const ROOT = 'Project Guardian';
 const AGENT_LABEL = { codex: 'Codex', claude: 'Claude', hermes: 'Hermes' };
@@ -74,12 +75,12 @@ function areaOf(project, roots) {
   return { root, area: first || '(raiz)' };
 }
 
-export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), parentOf = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365 }) {
+export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), areaByItem = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365 }) {
   const root = path.join(vaultPath, ROOT);
   const runtime = new Map(runtimeStates.map((s) => [s.project_id, s]));
   const intel = new Map(intelligence.map((s) => [s.project_id, s]));
-  const nameCounts = new Map(); for (const p of projects) nameCounts.set(p.name, (nameCounts.get(p.name) || 0) + 1);
-  const stem = (p) => safeName(nameCounts.get(p.name) > 1 ? `${p.name}--${String(p.id).slice(0, 8)}` : p.name);
+  const nameCounts = new Map(); for (const p of projects) nameCounts.set(safeName(p.name).toLowerCase(), (nameCounts.get(safeName(p.name).toLowerCase()) || 0) + 1);
+  const stem = (p) => safeName(nameCounts.get(safeName(p.name).toLowerCase()) > 1 ? `${p.name}--${String(p.id).slice(0, 8)}` : p.name);
   const link = (p) => `[[${ROOT}/Projetos/${stem(p)}|${p.name.replace(/[|\]]/g, '-')}]]`;
   const duplicates = findDuplicateGroups(projects);
   const dupOf = new Map(); for (const g of duplicates) for (const p of g.projects) dupOf.set(p.id, g);
@@ -142,12 +143,12 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
       list(i?.blockers || r?.open_blockers),
       '',
       '## Está dentro de',
-      parentOf.get(p.id) ? `- ${link(parentOf.get(p.id))}` : `- ${place.root}${place.area !== '—' && place.area !== '(raiz)' && place.area !== path.basename(p.root_path) ? ` › ${place.area}` : ''}`,
+      `- ${areaByItem.get(p.id) ? `[\`${areaByItem.get(p.id)}\`](${fileUrl(areaByItem.get(p.id))})` : place.root}`,
       '',
       `## Conteúdo${kids.length ? ` (${kids.length} pastas)` : ''}`,
       kids.length
         ? kids.sort((a, b) => String(lastActivityIso(b)).localeCompare(String(lastActivityIso(a)))).slice(0, 60)
-          .map((k) => `- [${k.name}](${fileUrl(k.root_path)}) — ${kindLabel(k.kind)} · ${fmtDate(lastActivityIso(k))}`).join('\n') + (kids.length > 60 ? `\n- … e mais ${kids.length - 60}` : '')
+          .map((k) => `- [${relativeLabel(k, p).replace(/[[\]]/g, '')}](${fileUrl(k.root_path)}) — ${kindLabel(k.kind)} · ${fmtDate(lastActivityIso(k))}`).join('\n') + (kids.length > 60 ? `\n- … e mais ${kids.length - 60}` : '')
         : '- —',
       '',
       '## Relacionados',
@@ -202,14 +203,10 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
     mapa.push(`## ${r}`);
     for (const [a, items] of [...areas.entries()].sort()) {
       mapa.push(`- **${a}**`);
-      const inArea = new Set(items.map((x) => x.p.id));
-      const tops = items.filter((x) => !parentOf.get(x.p.id) || !inArea.has(parentOf.get(x.p.id).id));
-      const emit = (x, depth) => {
+      for (const x of items.sort((m, n) => m.p.name.localeCompare(n.p.name))) {
         const kids = childrenOf.get(x.p.id) || [];
-        mapa.push(`${'  '.repeat(depth)}- ${link(x.p)} — ${STATUS_LABEL[x.status]}${kids.length ? ` · ${kids.length} pastas dentro` : ''}`);
-        for (const c of items.filter((y) => parentOf.get(y.p.id)?.id === x.p.id).sort((m, n) => m.p.name.localeCompare(n.p.name))) emit(c, depth + 1);
-      };
-      for (const x of tops.sort((m, n) => m.p.name.localeCompare(n.p.name))) emit(x, 1);
+        mapa.push(`  - ${link(x.p)} — ${STATUS_LABEL[x.status]}${kids.length ? ` · ${kids.length} pastas dentro` : ''}`);
+      }
     }
     mapa.push('');
   }
