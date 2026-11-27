@@ -5,6 +5,7 @@ import { createStore } from '../../store/createStore.js';
 import { refreshRuntimeStates } from '../../activity/runtime-rollup.js';
 import os from 'node:os';
 import { renderCerebroVault } from '../../obsidian/cerebro.js';
+import { inventoryFolder } from '../../cerebro/inventory.js';
 import { indexSessions, mapSessionsToProjects } from '../../sessions/index.js';
 import { groupProjects } from '../../cerebro/grouping.js';
 
@@ -36,6 +37,7 @@ export async function renderVault({ projectRoot, config, projects: allProjects, 
     roots: config.scanRoots || [],
     now,
     archiveDays: config.cerebro?.archiveDays ?? 365,
+    inventoryOf: config.cerebro?.inventory === false ? null : (p) => inventoryFolder(p.root_path, { skip: config.exclude || [], maxFiles: config.cerebro?.inventoryMaxFiles || 20000 }),
   });
 }
 

@@ -8,6 +8,7 @@ import { fileUrl, writeLauncher } from '../cerebro/launchers.js';
 import { buildUniversalSummary, daysSince, isArchived, kindLabel, lastActivityIso, readInbox, safeName, INBOX_DIR } from '../cerebro/summary.js';
 import { findDuplicateGroups } from '../cerebro/duplicates.js';
 import { relativeLabel } from '../cerebro/grouping.js';
+import { inventoryFolder, formatSize, typesPresent, TYPE_LABEL, PREVIEWABLE } from '../cerebro/inventory.js';
 
 const ROOT = 'Project Guardian';
 const AGENT_LABEL = { codex: 'Codex', claude: 'Claude', hermes: 'Hermes' };
@@ -84,7 +85,64 @@ function areaOf(project, roots) {
   return { root, area: first || '(raiz)' };
 }
 
-export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), areaByItem = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365 }) {
+const fileLink = (p, f) => `[${f.name.replace(/[[\]]/g, '')}](${fileUrl(path.join(p.root_path, f.rel))})`;
+
+// "Arquivos" section of a project note: what types are inside, the main folders, recent files,
+// a photo gallery and the videos. The full list goes to Arquivos/<projeto>.md.
+export function renderFiles(p, inv, fullListLink) {
+  if (!inv) return ['## Arquivos', '- (pasta não encontrada ou sem acesso)'];
+  const out = [`## Arquivos (${inv.total} · ${formatSize(inv.bytes)}${inv.truncated ? ' · lista cortada' : ''})`, ''];
+  if (!inv.total) return [...out, '- pasta vazia'];
+  out.push('| Tipo | Arquivos | Tamanho | Extensões |', '|---|---:|---:|---|');
+  for (const [t, v] of [...inv.byType.entries()].sort((a, b) => b[1].bytes - a[1].bytes)) {
+    const exts = [...v.exts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([e, n]) => `${e} (${n})`).join(', ');
+    out.push(`| ${TYPE_LABEL[t]} | ${v.count} | ${formatSize(v.bytes)} | ${exts} |`);
+  }
+  const folders = [...inv.folders.entries()].filter(([k]) => k).sort((a, b) => b[1].bytes - a[1].bytes);
+  if (folders.length) {
+    out.push('', `**Pastas (${folders.length})**`);
+    for (const [k, v] of folders.slice(0, 30)) out.push(`- [${k.replace(/[[\]]/g, '')}](${fileUrl(path.join(p.root_path, k))}) — ${v.count} arquivos · ${formatSize(v.bytes)} · ${[...v.types].map((t) => TYPE_LABEL[t]).join(', ')}`);
+    if (folders.length > 30) out.push(`- … e mais ${folders.length - 30}`);
+  }
+  const images = inv.files.filter((f) => PREVIEWABLE.has(f.ext));
+  if (images.length) {
+    out.push('', `**Fotos (${images.length})**${p.metadata_only ? ' _— no Google Drive, abrir a nota baixa as miniaturas_' : ''}`, '');
+    out.push(images.slice(0, 12).map((f) => `![${f.name.replace(/[[\]|]/g, '')}|160](${fileUrl(path.join(p.root_path, f.rel))})`).join(' '));
+  }
+  const videos = inv.files.filter((f) => f.type === 'video');
+  if (videos.length) {
+    out.push('', `**Vídeos (${videos.length})**`);
+    for (const f of videos.slice(0, 10)) out.push(`- ▶ ${fileLink(p, f)} · ${formatSize(f.size)} · ${fmtDate(f.mtime)}`);
+  }
+  out.push('', '**Últimos arquivos mexidos**');
+  for (const f of inv.files.slice(0, 15)) out.push(`- ${fileLink(p, f)} — ${TYPE_LABEL[f.type]} · ${formatSize(f.size)} · ${fmtDate(f.mtime)}${f.rel.includes(path.sep) ? ` · em \`${path.dirname(f.rel)}\`` : ''}`);
+  out.push('', `[[${fullListLink}|📂 Lista completa de arquivos]]`);
+  return out;
+}
+
+const MAX_LISTED = 5000;
+function writeFileList(file, p, inv) {
+  const byFolder = new Map();
+  for (const f of [...inv.files].sort((a, b) => a.rel.localeCompare(b.rel)).slice(0, MAX_LISTED)) {
+    const d = path.dirname(f.rel) === '.' ? '' : path.dirname(f.rel);
+    if (!byFolder.has(d)) byFolder.set(d, []);
+    byFolder.get(d).push(f);
+  }
+  const lines = [`# Arquivos de ${p.name}`, '', `${inv.total} arquivos · ${formatSize(inv.bytes)} · [\`${p.root_path}\`](${fileUrl(p.root_path)})`, ''];
+  for (const [d, files] of byFolder) {
+    lines.push(`## ${d || '(raiz)'}`);
+    for (const f of files) lines.push(`- ${fileLink(p, f)} — ${TYPE_LABEL[f.type]} · ${formatSize(f.size)} · ${fmtDate(f.mtime)}`);
+    lines.push('');
+  }
+  if (inv.files.length > MAX_LISTED || inv.truncated) lines.push(`_Lista cortada: mostrando ${Math.min(inv.files.length, MAX_LISTED)} de ${inv.total} arquivos._`);
+  if (inv.skipped.length) lines.push('', `_Pastas automáticas não listadas: ${inv.skipped.slice(0, 20).map((s) => `\`${s}\``).join(', ')}${inv.skipped.length > 20 ? '…' : ''}_`);
+  const next = `${lines.join('\n')}\n`;
+  if (existsSync(file) && readFileSync(file, 'utf8') === next) return;
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, next);
+}
+
+export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), areaByItem = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365, inventoryOf = (p) => inventoryFolder(p.root_path) }) {
   const root = path.join(vaultPath, ROOT);
   const runtime = new Map(runtimeStates.map((s) => [s.project_id, s]));
   const intel = new Map(intelligence.map((s) => [s.project_id, s]));
@@ -118,6 +176,8 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
       ...projects.filter((q) => q.id !== p.id && p.project_family && q.project_family === p.project_family),
       ...(dupOf.get(p.id)?.projects || []).filter((q) => q.id !== p.id),
     ].filter((q, idx, a) => a.findIndex((x) => x.id === q.id) === idx);
+    const inv = inventoryOf ? inventoryOf(p) : null;
+    const types = typesPresent(inv);
     const frontmatter = [
       `status: ${yaml(STATUS_LABEL[status])}`,
       `tipo: ${yaml(kindLabel(p.kind))}`,
@@ -130,7 +190,14 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
       `excluir: ${marked}`,
       `ignorar: ${ignored}`,
       `caminho: ${yaml(p.root_path)}`,
+      ...(inv ? [
+        `arquivos: ${inv.total}`,
+        `tamanho: ${yaml(formatSize(inv.bytes))}`,
+        `tem: [${types.map((t) => yaml(TYPE_LABEL[t])).join(', ')}]`,
+        `tags: [${types.map((t) => yaml(`tem/${t}`)).join(', ')}]`,
+      ] : []),
     ].join('\n');
+    if (inv) writeFileList(path.join(root, 'Arquivos', `${stem(p)}.md`), p, inv);
     const older = sessions.slice(1, 6).map((s) => {
       const u = writeLauncher(vaultPath, s);
       return `- ${agentLabel(s.agent)}, ${fmtDateTime(s.updated_at)}${s.title ? ` — ${s.title}` : ''}${u ? ` · [retomar](${u})` : ''}`;
@@ -165,6 +232,8 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
         ? kids.sort((a, b) => String(lastActivityIso(b)).localeCompare(String(lastActivityIso(a)))).slice(0, 60)
           .map((k) => `- [${relativeLabel(k, p).replace(/[[\]]/g, '')}](${fileUrl(k.root_path)}) — ${kindLabel(k.kind)} · ${fmtDate(lastActivityIso(k))}`).join('\n') + (kids.length > 60 ? `\n- … e mais ${kids.length - 60}` : '')
         : '- —',
+      '',
+      ...renderFiles(p, inv, `${ROOT}/Arquivos/${stem(p)}`),
       '',
       '## Relacionados',
       related.length ? related.map((q) => `- ${link(q)} (${q.root_path})`).join('\n') : '- —',
@@ -256,6 +325,11 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
     let to = path.join(toDir, f);
     if (existsSync(to)) to = path.join(toDir, `${f.slice(0, -3)}--${new Date(now).toISOString().slice(0, 10)}.md`);
     renameSync(from, to); removed += 1; changed = true;
+  }
+
+  const filesDir = path.join(root, 'Arquivos');
+  for (const f of existsSync(filesDir) ? readdirSync(filesDir) : []) {
+    if (f.endsWith('.md') && !current.has(f)) { unlinkSync(path.join(filesDir, f)); changed = true; }
   }
 
   mkdirSync(path.join(vaultPath, INBOX_DIR), { recursive: true });
