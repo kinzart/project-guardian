@@ -1,7 +1,7 @@
 // Cérebro: Portuguese "second brain" vault rendered from Guardian's inventory.
 // Writes only inside <vault>/Project Guardian and <vault>/_retomar. Every page keeps whatever the
 // person writes outside the generated block; frontmatter is regenerated on every render.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { START, END } from './renderer.js';
 import { fileUrl, writeLauncher } from '../cerebro/launchers.js';
@@ -183,6 +183,21 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
   if (!duplicates.length) dups.push('- nenhum encontrado');
   changed = writeNote(path.join(root, 'Duplicados.md'), { generated: dups.join('\n') }) || changed;
 
+  // Notes for projects no longer in the inventory (folder deleted or excluded) move to
+  // Removidos/, never deleted, so the person's own notes in them are kept.
+  const current = new Set(projects.map((p) => `${stem(p)}.md`));
+  const projDir = path.join(root, 'Projetos');
+  let removed = 0;
+  for (const f of existsSync(projDir) ? readdirSync(projDir) : []) {
+    if (!f.endsWith('.md') || current.has(f)) continue;
+    const from = path.join(projDir, f);
+    if (!readFileSync(from, 'utf8').includes(START)) continue;
+    const toDir = path.join(root, 'Removidos'); mkdirSync(toDir, { recursive: true });
+    let to = path.join(toDir, f);
+    if (existsSync(to)) to = path.join(toDir, `${f.slice(0, -3)}--${new Date(now).toISOString().slice(0, 10)}.md`);
+    renameSync(from, to); removed += 1; changed = true;
+  }
+
   mkdirSync(path.join(vaultPath, INBOX_DIR), { recursive: true });
-  return { root, changed, projectsRendered: projects.length, duplicates: duplicates.length };
+  return { root, changed, projectsRendered: projects.length, duplicates: duplicates.length, removed };
 }

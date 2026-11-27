@@ -91,3 +91,18 @@ test('cli: guardian obsidian render builds the Cérebro vault with agent session
     rmSync(v, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('vault: notes of projects that disappeared move to Removidos with manual notes intact', () => {
+  const v = vault();
+  try {
+    renderCerebroVault({ vaultPath: v, projects: [P('a', 'Album', 'F:\\Album', 2), P('b', 'Gone', 'F:\\Gone', 2)], roots: ['F:\\'], now });
+    const f = path.join(v, 'Project Guardian', 'Projetos', 'Gone.md');
+    writeFileSync(f, `${readFileSync(f, 'utf8')}minha nota\n`);
+    writeFileSync(path.join(v, 'Project Guardian', 'Projetos', 'Manual.md'), 'nota feita à mão');
+    const r = renderCerebroVault({ vaultPath: v, projects: [P('a', 'Album', 'F:\\Album', 2)], roots: ['F:\\'], now });
+    assert.equal(r.removed, 1);
+    assert.equal(existsSync(f), false);
+    assert.match(read(v, 'Removidos/Gone.md'), /minha nota/);
+    assert.ok(existsSync(path.join(v, 'Project Guardian', 'Projetos', 'Manual.md')));
+  } finally { rmSync(v, { recursive: true, force: true }); }
+});
