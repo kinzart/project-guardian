@@ -19,6 +19,7 @@ import { agentsCommand } from './commands/agents.js';
 import { agentCommand } from './commands/agent.js';
 import { handoffCommand } from './commands/handoff.js';
 import { obsidianCommand } from './commands/obsidian.js';
+import { cerebroCommand } from './commands/cerebro.js';
 import { askCommand, queryCommand } from './commands/query.js';
 import { serviceCommand } from './commands/service.js';
 import { serviceHostCommand } from './commands/serviceHost.js';
@@ -46,6 +47,7 @@ const COMMANDS = {
   agent: agentCommand,
   handoff: handoffCommand,
   obsidian: obsidianCommand,
+  cerebro: cerebroCommand,
   ask: askCommand,
   query: queryCommand,
   service: serviceCommand,
@@ -56,7 +58,7 @@ const COMMANDS = {
 };
 
 const USAGE =
-  'Usage: guardian <install|uninstall|repair|scan|list|show|status|doctor|context|explain|watch|watch-status|events|processes|sessions|process-status|observe|shells|shell-events|shell|agents|agent|handoff|obsidian|query|ask|service> [args]';
+  'Usage: guardian <install|uninstall|repair|scan|list|show|status|doctor|context|explain|watch|watch-status|events|processes|sessions|process-status|observe|shells|shell-events|shell|agents|agent|handoff|obsidian|cerebro|query|ask|service> [args]';
 
 export async function runCli(argv, { projectRoot, appRoot = projectRoot }) {
   const [command, ...args] = argv;

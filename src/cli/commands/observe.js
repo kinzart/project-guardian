@@ -14,6 +14,7 @@ import { acquireInstanceLock } from '../../service/instanceLock.js';
 import { pruneLogs, startMaintenanceScheduler } from '../../service/maintenance.js';
 import { scanCommand } from './scan.js';
 import { obsidianCommand } from './obsidian.js';
+import { suggestNow } from './cerebro.js';
 
 function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString('en-GB', { hour12: false });
@@ -247,6 +248,18 @@ export async function observeCommand({ projectRoot, args }) {
     },
     onError: (error) => console.log(`${fmtTime(new Date().toISOString())} scheduled reconciliation error: ${error.message}`),
   });
+  // Cérebro nightly: full scan + vault render + AI suggestions (only if a command is configured).
+  const nightlyRun = config.cerebro?.nightlyTime ? startMaintenanceScheduler({
+    times: [config.cerebro.nightlyTime],
+    run: async () => {
+      await scanCommand({ projectRoot, store, config });
+      if (config.obsidian.vaultPath) {
+        await obsidianCommand({ projectRoot, args: ['render'], store, config });
+        await suggestNow({ projectRoot, store, config });
+      }
+    },
+    onError: (error) => console.log(`${fmtTime(new Date().toISOString())} cerebro nightly error: ${error.message}`),
+  }) : null;
   console.log('Filesystem: running');
   console.log('Processes: running');
   console.log(`Shell IPC: ${shellObserver.health().status.toLowerCase()}`);
@@ -276,6 +289,7 @@ export async function observeCommand({ projectRoot, args }) {
     console.log('         stopping Codex native-hook IPC server');
     await codexAgentObserver.stop('STOPPED');
     maintenance.stop();
+    nightlyRun?.stop();
     console.log('         closing database');
     await store.close();
     instanceLock.release();

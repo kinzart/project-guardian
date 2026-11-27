@@ -40,6 +40,17 @@ guardian service restart
 
 Run `guardian --help` for the complete command surface.
 
+## Cérebro: painel de todos os projetos no Obsidian
+
+```powershell
+guardian obsidian configure D:\CEREBRO   # an existing vault (has a .obsidian folder)
+guardian obsidian render                  # Painel, Mapa, Duplicados and one note per project
+guardian cerebro rule install             # asks Codex/Claude to log a short summary per task
+guardian cerebro nightly                  # scan + render + AI suggestions (Sugestões.md)
+```
+
+Each project note shows status, last change (and which file), the universal summary, the last AI session (Codex, Claude Code or Hermes) with its final message and a **▶ Retomar** link that reopens that exact session in the project folder. Projects untouched for `cerebro.archiveDays` (365) are listed as "Arquivo — não mexer". Nothing in your project folders is moved, changed or deleted. Set `metadataOnlyRoots` for Google Drive so nothing is downloaded.
+
 ## Privacy
 
 Guardian stores structural metadata only. It does not store prompts, assistant responses, reasoning, transcripts, raw terminal output, environment values, credentials, or secret-file contents. See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
