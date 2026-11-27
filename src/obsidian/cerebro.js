@@ -243,5 +243,12 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
   }
 
   mkdirSync(path.join(vaultPath, INBOX_DIR), { recursive: true });
+  mkdirSync(path.join(vaultPath, 'Triagem'), { recursive: true });
+  const task = path.join(vaultPath, '_hermes', 'TRIAGEM.md');
+  if (!existsSync(task)) {
+    mkdirSync(path.dirname(task), { recursive: true });
+    const tpl = readFileSync(new URL('../cerebro/templates/TRIAGEM-HERMES.md', import.meta.url), 'utf8');
+    writeFileSync(task, tpl.replaceAll('{{VAULT}}', vaultPath.replace(/[\\/]+$/, '')));
+  }
   return { root, changed, projectsRendered: projects.length, duplicates: duplicates.length, removed, marked: rows.filter((x) => x.marked).map((x) => x.p) };
 }

@@ -64,3 +64,30 @@ test('recycle: refuses off Windows and passes the path via env, not the command 
     assert.equal(seen.cmd, 'powershell.exe'); assert.ok(!seen.args.join(' ').includes(d)); assert.equal(seen.opts.env.CEREBRO_TARGET, d);
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
+
+import { readTriageItems, cleanupTriage, itemRefusal } from '../src/cerebro/cleanup.js';
+
+test('triage: only ticked items, safety refusals, done lines rewritten', () => {
+  const d = mkdtempSync(path.join(os.tmpdir(), 'cerebro-t-'));
+  try {
+    writeFileSync(path.join(d, 'Slides.md'), [
+      '# Slides',
+      '- [x] apagar: `D:\\APPS\\Slides\\old.bak` — backup da IA (2 MB)',
+      '- [ ] apagar: `D:\\APPS\\Slides\\keep.txt` — talvez',
+      '- [x] apagar: `D:\\APPS` — tudo',
+      '- [x] apagar: `C:\\Windows\\x.dll` — fora',
+    ].join('\n'));
+    writeFileSync(path.join(d, '_progresso.md'), '- [x] apagar: `D:\\APPS\\nope`');
+    const items = readTriageItems(d);
+    assert.deepEqual(items.map((i) => i.target), ['D:\\APPS\\Slides\\old.bak', 'D:\\APPS', 'C:\\Windows\\x.dll']);
+    const projects = [{ id: 's', name: 'Slides', root_path: 'D:\\APPS\\Slides' }];
+    const calls = [];
+    const res = cleanupTriage(items, { roots: ['D:\\'], vaultPath: 'D:\\CEREBRO', projects, confirm: true, recycle: (p) => { calls.push(p); return { ok: true }; } });
+    assert.deepEqual(res.map((r) => r.action), ['lixeira', 'recusado', 'recusado']);
+    assert.deepEqual(calls, ['D:\\APPS\\Slides\\old.bak']);
+    const text = readFileSync(path.join(d, 'Slides.md'), 'utf8');
+    assert.match(text, /- \[x\] na Lixeira: `D:\\APPS\\Slides\\old\.bak`/);
+    assert.equal(readTriageItems(d).length, 2);
+    assert.match(itemRefusal('D:\\CEREBRO\\x', { roots: ['D:\\'], vaultPath: 'D:\\CEREBRO' }), /cofre/);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});

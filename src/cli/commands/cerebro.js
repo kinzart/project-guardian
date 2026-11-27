@@ -7,7 +7,7 @@ import { indexSessions, mapSessionsToProjects } from '../../sessions/index.js';
 import { findDuplicateGroups } from '../../cerebro/duplicates.js';
 import { buildInventoryDigest, runSuggestions } from '../../cerebro/suggest.js';
 import { installRule, removeRule } from '../../cerebro/rule.js';
-import { cleanup } from '../../cerebro/cleanup.js';
+import { cleanup, cleanupTriage, readTriageItems } from '../../cerebro/cleanup.js';
 import { groupProjects } from '../../cerebro/grouping.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
 
@@ -16,18 +16,28 @@ const ACTION_LABEL = { lixeira: 'enviado para a Lixeira', recusado: 'NÃO apagad
 export async function limpar({ projectRoot, store, config, confirm, recycle }) {
   const rendered = await obsidianCommand({ projectRoot, args: ['render'], store, config });
   const marked = rendered?.marked || [];
-  if (!marked.length) { console.log('Nenhum projeto marcado para excluir (propriedade "excluir" ou #apagar).'); return []; }
-  const results = cleanup(marked, { roots: config.scanRoots || [], projects: await store.listProjects(), confirm, recycle });
-  for (const r of results) console.log(`- ${r.project.name} (${r.project.root_path}): ${ACTION_LABEL[r.action]}${r.reason ? ` — ${r.reason}` : ''}`);
+  const vault = config.obsidian.vaultPath;
+  const items = readTriageItems(path.join(vault, 'Triagem'));
+  if (!marked.length && !items.length) { console.log('Nada marcado: nenhuma caixinha "excluir" (ou #apagar) nos projetos e nenhum "- [x] apagar:" na Triagem.'); return []; }
+  const projects = await store.listProjects();
+  const roots = config.scanRoots || [];
+  const results = cleanup(marked, { roots, projects, confirm, recycle });
+  const markedIds = new Set(marked.map((p) => p.id));
+  const triage = cleanupTriage(items, { roots, vaultPath: vault, projects, markedIds, confirm, recycle });
+  const lines = [
+    ...results.map((r) => `- projeto ${r.project.name} — ${r.project.root_path}: ${ACTION_LABEL[r.action]}${r.reason ? ` (${r.reason})` : ''}`),
+    ...triage.map((r) => `- ${r.item.target}: ${ACTION_LABEL[r.action]}${r.reason ? ` (${r.reason})` : ''}`),
+  ];
+  for (const l of lines) console.log(l);
   if (!confirm) console.log('\nNada foi apagado. Confira a lista e rode: guardian cerebro limpar --confirmar');
   else {
-    const log = path.join(config.obsidian.vaultPath, 'Project Guardian', 'Limpeza.md');
+    const log = path.join(vault, 'Project Guardian', 'Limpeza.md');
     mkdirSync(path.dirname(log), { recursive: true });
-    appendFileSync(log, `\n## ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n${results.map((r) => `- ${r.project.name} — ${r.project.root_path}: ${ACTION_LABEL[r.action]}${r.reason ? ` (${r.reason})` : ''}`).join('\n')}\n`);
+    appendFileSync(log, `\n## ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n${lines.join('\n')}\n`);
     for (const r of results) if (r.action === 'lixeira') await store.removeProject(r.project.id);
-    if (results.some((r) => r.action === 'lixeira')) await scanCommand({ projectRoot, store, config }).then(() => obsidianCommand({ projectRoot, args: ['render'], store, config }));
+    if ([...results, ...triage].some((r) => r.action === 'lixeira')) await scanCommand({ projectRoot, store, config }).then(() => obsidianCommand({ projectRoot, args: ['render'], store, config }));
   }
-  return results;
+  return { projects: results, items: triage };
 }
 
 export async function suggestNow({ projectRoot, store, config }) {
