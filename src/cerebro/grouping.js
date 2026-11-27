@@ -30,14 +30,15 @@ export function projectFolderFor(p, roots, strongTopLevel, strongPaths = []) {
   if (depth === 1 || strongTopLevel.has(norm(top))) return { folder: top, area: null };
   // A container without its own project files that holds two or more real projects in
   // different subfolders (e.g. PLATAFORMA with MIX MASTER and CORTADOR) is an area too.
+  // Inside such a container only the real projects become projects of their own; everything
+  // else (outputs, recordings, caches) stays content of the container.
   let level = rootParts + 2;
   let area = top;
   while (level < parts.length) {
-    const folder = parts.slice(0, level).join('/');
-    const nf = norm(folder);
+    const nf = norm(parts.slice(0, level).join('/'));
     if (strongPaths.includes(nf)) break;
     const kids = new Set(strongPaths.filter((sp) => sp.startsWith(`${nf}/`)).map((sp) => sp.slice(nf.length + 1).split('/')[0]));
-    if (kids.size < 2) break;
+    if (kids.size < 2 || !kids.has(parts[level].toLowerCase())) break;
     area = joinLike(p, parts.slice(0, level));
     level += 1;
   }
@@ -53,7 +54,11 @@ export function groupProjects(projects, roots = [], sessions = []) {
     if (root && hasStrong(p) && splitPath(p.root_path).length === splitPath(root).length + 1) strongTopLevel.add(norm(p.root_path));
   }
   const byPath = new Map(projects.map((p) => [norm(p.root_path), p]));
-  const strongPaths = projects.filter((p) => !isLooseMedia(p) && Array.isArray(p.evidence)).map((p) => norm(p.root_path));
+  // Real projects and folders where an AI agent worked anchor the structure.
+  const strongPaths = [...new Set([
+    ...projects.filter((p) => !isLooseMedia(p) && Array.isArray(p.evidence)).map((p) => norm(p.root_path)),
+    ...sessions.filter((s) => s.cwd && rootOf(s.cwd, roots)).map((s) => norm(s.cwd)),
+  ])];
   const items = new Map();
   const areaOf = new Map();
   const childrenOf = new Map();

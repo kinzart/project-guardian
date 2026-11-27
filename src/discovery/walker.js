@@ -12,7 +12,7 @@ function isExcludedName(name, excludeSet) {
 // have its own "extensions" folder; only ".vscode/extensions" is noise).
 function isExcludedByPath(dirPath, name, excludePathPatterns) {
   if (excludePathPatterns.length === 0) return false;
-  const full = `${dirPath}/${name}`.replace(/\\/g, '/').toLowerCase();
+  const full = `${dirPath}/${name}`.replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
   return excludePathPatterns.some((pattern) => full.endsWith(pattern));
 }
 

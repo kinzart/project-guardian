@@ -70,7 +70,8 @@ test('a container holding several real projects becomes an area itself', () => {
     real('sub', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\MIX MASTER\\engine'),
   ];
   const { items, childrenOf, areaOf } = groupProjects(projects, roots);
-  assert.deepEqual(items.map((i) => i.name).sort(), ['CORTADOR', 'MIX MASTER', 'SAIDAS']);
+  assert.deepEqual(items.map((i) => i.name).sort(), ['CORTADOR', 'MIX MASTER', 'PLATAFORMA']);
+  assert.deepEqual(childrenOf.get(items.find((i) => i.name === 'PLATAFORMA').id).map((c) => c.id), ['rec']);
   assert.equal(areaOf.get('mm'), 'D:\\APPS E PROGRAMAS\\PLATAFORMA');
   assert.deepEqual(childrenOf.get('mm').map((c) => c.id), ['sub']);
 });
@@ -87,4 +88,9 @@ test('vault: ignorar hides a project in its own section', () => {
     assert.match(painel, /## Em andamento \(0\)/); assert.match(painel, /## Ignorados \(1\)[\s\S]*STEAM/);
     assert.match(readFileSync(f, 'utf8'), /^ignorar: true$/m);
   } finally { rmSync(v, { recursive: true, force: true }); }
+});
+
+test('agent work folders count as real projects inside a container', () => {
+  const { items } = groupProjects([real('mm', 'D:\\APPS\\PLATAFORMA\\MIX MASTER')], roots, [{ cwd: 'D:\\APPS\\PLATAFORMA\\SEPARADOR' }]);
+  assert.deepEqual(items.map((i) => i.name).sort(), ['MIX MASTER', 'SEPARADOR']);
 });

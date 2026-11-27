@@ -18,8 +18,12 @@ export function agentHomes(config) {
   };
 }
 
-export async function renderVault({ projectRoot, config, projects, runtimeStates, intelligence, homes = agentHomes(config), now = Date.now() }) {
-  const sessions = await indexSessions({ ...homes, cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
+export async function renderVault({ projectRoot, config, projects: allProjects, runtimeStates, intelligence, homes = agentHomes(config), now = Date.now() }) {
+  let projects = allProjects;
+  const vaultNorm = String(config.obsidian.vaultPath).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
+  const inVault = (p) => { const n = String(p || '').toLowerCase().replace(/\\/g, '/'); return n === vaultNorm || n.startsWith(`${vaultNorm}/`); };
+  const sessions = (await indexSessions({ ...homes, cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') })).filter((s) => !inVault(s.cwd));
+  projects = projects.filter((p) => !inVault(p.root_path));
   const { items, childrenOf, areaOf: areaByItem } = groupProjects(projects, config.scanRoots || [], sessions);
   return renderCerebroVault({
     vaultPath: config.obsidian.vaultPath,

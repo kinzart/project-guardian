@@ -138,6 +138,13 @@ export function loadConfig(configPath, { autoDetectRoots = true } = {}) {
     service: { ...DEFAULTS.service, ...(raw.service || {}) },
     cerebro: { ...DEFAULTS.cerebro, ...(raw.cerebro || {}) },
   };
+  // The Obsidian vault is output, never a project.
+  if (config.obsidian?.vaultPath) {
+    const vault = String(config.obsidian.vaultPath).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    config.excludePaths = [...new Set([...(config.excludePaths || []), vault])];
+  }
+  // Built-in excludes always apply, on top of the person's own list.
+  config.exclude = [...new Set([...DEFAULTS.exclude, ...(Array.isArray(raw.exclude) ? raw.exclude : [])])];
 
   let changed = !existsSync(configPath);
 

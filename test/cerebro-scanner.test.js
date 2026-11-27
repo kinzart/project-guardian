@@ -59,3 +59,15 @@ test('scanner: metadata-only roots never open files', async () => {
     assert.equal(sources.length, 0);
   } finally { cleanup(); rmSync(root, { recursive: true, force: true }); }
 });
+
+import { loadConfig } from '../src/config/loadConfig.js';
+test('config: built-in excludes merge with the saved list; vault excluded from scans', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'cerebro-cfg-'));
+  try {
+    const f = path.join(dir, 'guardian.config.json');
+    writeFileSync(f, JSON.stringify({ scanRoots: ['D:\\'], exclude: ['Downloads'], obsidian: { vaultPath: 'D:\\CEREBRO' } }));
+    const c = loadConfig(f, { autoDetectRoots: false });
+    assert.ok(c.exclude.includes('Downloads')); assert.ok(c.exclude.includes('npm-global'));
+    assert.ok(c.excludePaths.includes('d:/cerebro'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
