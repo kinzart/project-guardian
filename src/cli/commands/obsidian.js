@@ -6,6 +6,7 @@ import { refreshRuntimeStates } from '../../activity/runtime-rollup.js';
 import os from 'node:os';
 import { renderCerebroVault } from '../../obsidian/cerebro.js';
 import { indexSessions, mapSessionsToProjects } from '../../sessions/index.js';
+import { groupProjects } from '../../cerebro/grouping.js';
 
 export function agentHomes(config) {
   const home = os.homedir();
@@ -19,12 +20,15 @@ export function agentHomes(config) {
 
 export async function renderVault({ projectRoot, config, projects, runtimeStates, intelligence, homes = agentHomes(config), now = Date.now() }) {
   const sessions = await indexSessions({ ...homes, cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
+  const { items, childrenOf, parentOf } = groupProjects(projects, config.scanRoots || []);
   return renderCerebroVault({
     vaultPath: config.obsidian.vaultPath,
-    projects,
+    projects: items,
+    childrenOf,
+    parentOf,
     runtimeStates,
     intelligence,
-    sessionsByProject: mapSessionsToProjects(sessions, projects),
+    sessionsByProject: mapSessionsToProjects(sessions, items),
     roots: config.scanRoots || [],
     now,
     archiveDays: config.cerebro?.archiveDays ?? 365,

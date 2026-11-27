@@ -8,6 +8,7 @@ import { findDuplicateGroups } from '../../cerebro/duplicates.js';
 import { buildInventoryDigest, runSuggestions } from '../../cerebro/suggest.js';
 import { installRule, removeRule } from '../../cerebro/rule.js';
 import { cleanup } from '../../cerebro/cleanup.js';
+import { groupProjects } from '../../cerebro/grouping.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
 
 const ACTION_LABEL = { lixeira: 'enviado para a Lixeira', recusado: 'NÃO apagado', erro: 'erro', pendente: 'vai para a Lixeira' };
@@ -31,7 +32,7 @@ export async function limpar({ projectRoot, store, config, confirm, recycle }) {
 
 export async function suggestNow({ projectRoot, store, config }) {
   if (!config.cerebro?.suggestCommand || !config.obsidian?.vaultPath) return null;
-  const projects = await store.listProjects();
+  const { items: projects } = groupProjects(await store.listProjects(), config.scanRoots || []);
   const sessions = await indexSessions({ ...agentHomes(config), cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
   const digest = buildInventoryDigest(projects, mapSessionsToProjects(sessions, projects), findDuplicateGroups(projects));
   return runSuggestions({ command: config.cerebro.suggestCommand, digest, outPath: path.join(config.obsidian.vaultPath, 'Project Guardian', 'Sugestões.md') });

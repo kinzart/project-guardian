@@ -1,7 +1,7 @@
 // Cérebro: Portuguese "second brain" vault rendered from Guardian's inventory.
 // Writes only inside <vault>/Project Guardian and <vault>/_retomar. Every page keeps whatever the
 // person writes outside the generated block; frontmatter is regenerated on every render.
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { START, END } from './renderer.js';
 import { fileUrl, writeLauncher } from '../cerebro/launchers.js';
@@ -74,7 +74,7 @@ function areaOf(project, roots) {
   return { root, area: first || '(raiz)' };
 }
 
-export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365 }) {
+export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), parentOf = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365 }) {
   const root = path.join(vaultPath, ROOT);
   const runtime = new Map(runtimeStates.map((s) => [s.project_id, s]));
   const intel = new Map(intelligence.map((s) => [s.project_id, s]));
@@ -86,7 +86,8 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
 
   const rows = projects.map((p) => {
     const sessions = sessionsByProject.get(p.id) || [];
-    const last = lastActivityIso(p, sessions);
+    const kidList = childrenOf.get(p.id) || [];
+    const last = [lastActivityIso(p, sessions), ...kidList.map((k) => lastActivityIso(k))].filter(Boolean).sort().pop() || null;
     return { p, sessions, last, status: statusOf(p, last, now, archiveDays), place: areaOf(p, roots) };
   });
 
@@ -94,6 +95,7 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
   for (const row of rows) row.marked = readDeleteMark(path.join(root, 'Projetos', `${stem(row.p)}.md`));
   for (const { p, sessions, last, status, place, marked } of rows) {
     const i = intel.get(p.id); const r = runtime.get(p.id);
+    const kids = childrenOf.get(p.id) || [];
     const latest = sessions[0] || null;
     const resumeUrl = latest ? writeLauncher(vaultPath, latest) : null;
     const summary = buildUniversalSummary({ project: p, intelligence: i ? { ...i, current_focus: r?.current_focus || i.current_focus } : null, lastSession: latest, inbox: readInbox(vaultPath, path.basename(p.root_path)) || readInbox(vaultPath, p.name) });
@@ -138,6 +140,15 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
       '',
       '## Bloqueios',
       list(i?.blockers || r?.open_blockers),
+      '',
+      '## Está dentro de',
+      parentOf.get(p.id) ? `- ${link(parentOf.get(p.id))}` : `- ${place.root}${place.area !== '—' && place.area !== '(raiz)' && place.area !== path.basename(p.root_path) ? ` › ${place.area}` : ''}`,
+      '',
+      `## Conteúdo${kids.length ? ` (${kids.length} pastas)` : ''}`,
+      kids.length
+        ? kids.sort((a, b) => String(lastActivityIso(b)).localeCompare(String(lastActivityIso(a)))).slice(0, 60)
+          .map((k) => `- [${k.name}](${fileUrl(k.root_path)}) — ${kindLabel(k.kind)} · ${fmtDate(lastActivityIso(k))}`).join('\n') + (kids.length > 60 ? `\n- … e mais ${kids.length - 60}` : '')
+        : '- —',
       '',
       '## Relacionados',
       related.length ? related.map((q) => `- ${link(q)} (${q.root_path})`).join('\n') : '- —',
@@ -191,7 +202,14 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
     mapa.push(`## ${r}`);
     for (const [a, items] of [...areas.entries()].sort()) {
       mapa.push(`- **${a}**`);
-      for (const x of items.sort((m, n) => m.p.name.localeCompare(n.p.name))) mapa.push(`  - ${link(x.p)} — ${STATUS_LABEL[x.status]}`);
+      const inArea = new Set(items.map((x) => x.p.id));
+      const tops = items.filter((x) => !parentOf.get(x.p.id) || !inArea.has(parentOf.get(x.p.id).id));
+      const emit = (x, depth) => {
+        const kids = childrenOf.get(x.p.id) || [];
+        mapa.push(`${'  '.repeat(depth)}- ${link(x.p)} — ${STATUS_LABEL[x.status]}${kids.length ? ` · ${kids.length} pastas dentro` : ''}`);
+        for (const c of items.filter((y) => parentOf.get(y.p.id)?.id === x.p.id).sort((m, n) => m.p.name.localeCompare(n.p.name))) emit(c, depth + 1);
+      };
+      for (const x of tops.sort((m, n) => m.p.name.localeCompare(n.p.name))) emit(x, 1);
     }
     mapa.push('');
   }
@@ -214,7 +232,10 @@ export function renderCerebroVault({ vaultPath, projects, runtimeStates = [], in
   for (const f of existsSync(projDir) ? readdirSync(projDir) : []) {
     if (!f.endsWith('.md') || current.has(f)) continue;
     const from = path.join(projDir, f);
-    if (!readFileSync(from, 'utf8').includes(START)) continue;
+    const text = readFileSync(from, 'utf8');
+    if (!text.includes(START)) continue;
+    const manual = splitFrontmatter(text).replace(new RegExp(`${START}[\\s\\S]*?${END}`), '').replace('## Minhas notas', '').trim();
+    if (!manual) { unlinkSync(from); removed += 1; changed = true; continue; }
     const toDir = path.join(root, 'Removidos'); mkdirSync(toDir, { recursive: true });
     let to = path.join(toDir, f);
     if (existsSync(to)) to = path.join(toDir, `${f.slice(0, -3)}--${new Date(now).toISOString().slice(0, 10)}.md`);
