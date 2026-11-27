@@ -23,6 +23,15 @@ function splitFrontmatter(text) {
 }
 
 // True when the person ticked the "excluir" property or wrote #apagar outside the generated block.
+// True when the person ticked the "ignorar" property: the project stays out of the main lists.
+export function readIgnoreMark(file) {
+  if (!existsSync(file)) return false;
+  const text = readFileSync(file, 'utf8');
+  if (!text.startsWith('---\n')) return false;
+  const end = text.indexOf('\n---\n', 4);
+  return /^ignorar:\s*(true|sim|yes)\s*$/im.test(end >= 0 ? text.slice(4, end) : '');
+}
+
 export function readDeleteMark(file) {
   if (!existsSync(file)) return false;
   const text = readFileSync(file, 'utf8');
@@ -63,7 +72,7 @@ export function statusOf(project, lastIso, now, archiveDays) {
   return 'parado';
 }
 
-const STATUS_LABEL = { andamento: 'em andamento', retomar: 'dá pra retomar', parado: 'parado', concluido: 'concluído', arquivo: 'arquivo — não mexer' };
+const STATUS_LABEL = { ignorado: 'ignorado', andamento: 'em andamento', retomar: 'dá pra retomar', parado: 'parado', concluido: 'concluído', arquivo: 'arquivo — não mexer' };
 
 function areaOf(project, roots) {
   const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+$/, '');
@@ -93,8 +102,13 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
   });
 
   let changed = false;
-  for (const row of rows) row.marked = readDeleteMark(path.join(root, 'Projetos', `${stem(row.p)}.md`));
-  for (const { p, sessions, last, status, place, marked } of rows) {
+  for (const row of rows) {
+    const note = path.join(root, 'Projetos', `${stem(row.p)}.md`);
+    row.marked = readDeleteMark(note);
+    row.ignored = readIgnoreMark(note);
+    if (row.ignored) row.status = 'ignorado';
+  }
+  for (const { p, sessions, last, status, place, marked, ignored } of rows) {
     const i = intel.get(p.id); const r = runtime.get(p.id);
     const kids = childrenOf.get(p.id) || [];
     const latest = sessions[0] || null;
@@ -114,6 +128,7 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
       `ultima_ia_em: ${yaml(latest?.updated_at ? latest.updated_at.slice(0, 10) : '')}`,
       `arquivo: ${status === 'arquivo'}`,
       `excluir: ${marked}`,
+      `ignorar: ${ignored}`,
       `caminho: ${yaml(p.root_path)}`,
     ].join('\n');
     const older = sessions.slice(1, 6).map((s) => {
@@ -184,6 +199,10 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
     ...section('Parados há mais tempo', 'parado'),
     '',
     ...section('Concluídos', 'concluido'),
+    '',
+    `## Ignorados (${byStatus('ignorado').length})`,
+    '_Marcados com "ignorar": não são projetos seus (programas, sistema). Nada é apagado._',
+    ...byStatus('ignorado').map(line),
     '',
     `## Arquivo — não mexer (${byStatus('arquivo').length})`,
     `_Sem mudança há mais de ${archiveDays} dias. Ficam onde estão._`,

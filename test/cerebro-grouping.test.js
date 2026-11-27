@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { groupProjects, isLooseMedia } from '../src/cerebro/grouping.js';
@@ -59,5 +59,32 @@ test('vault: project note shows content with relative paths and its area', () =>
     assert.match(note, /## Está dentro de\n- \[`D:\\APPS E PROGRAMAS`\]/);
     assert.match(note, /\[SAIDAS › Sessoes › RICK CASTELLO › Faixas cortadas › uirec-20261118_040606\]/);
     assert.doesNotMatch(readFileSync(path.join(v, 'Project Guardian', 'Painel.md'), 'utf8'), /uirec/);
+  } finally { rmSync(v, { recursive: true, force: true }); }
+});
+
+test('a container holding several real projects becomes an area itself', () => {
+  const projects = [
+    real('mm', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\MIX MASTER'),
+    real('co', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\CORTADOR'),
+    media('rec', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\SAIDAS\\Sessoes\\LUIZ\\Faixas cortadas\\uirec-1'),
+    real('sub', 'D:\\APPS E PROGRAMAS\\PLATAFORMA\\MIX MASTER\\engine'),
+  ];
+  const { items, childrenOf, areaOf } = groupProjects(projects, roots);
+  assert.deepEqual(items.map((i) => i.name).sort(), ['CORTADOR', 'MIX MASTER', 'SAIDAS']);
+  assert.equal(areaOf.get('mm'), 'D:\\APPS E PROGRAMAS\\PLATAFORMA');
+  assert.deepEqual(childrenOf.get('mm').map((c) => c.id), ['sub']);
+});
+
+test('vault: ignorar hides a project in its own section', () => {
+  const v = mkdtempSync(path.join(os.tmpdir(), 'cerebro-i-')); mkdirSync(path.join(v, '.obsidian'));
+  try {
+    const items = [real('st', 'D:\\STEAM', '2026-11-26T00:00:00Z')];
+    renderCerebroVault({ vaultPath: v, projects: items, roots, now: Date.parse('2026-11-27T00:00:00Z') });
+    const f = path.join(v, 'Project Guardian', 'Projetos', 'STEAM.md');
+    writeFileSync(f, readFileSync(f, 'utf8').replace('ignorar: false', 'ignorar: true'));
+    renderCerebroVault({ vaultPath: v, projects: items, roots, now: Date.parse('2026-11-27T00:00:00Z') });
+    const painel = readFileSync(path.join(v, 'Project Guardian', 'Painel.md'), 'utf8');
+    assert.match(painel, /## Em andamento \(0\)/); assert.match(painel, /## Ignorados \(1\)[\s\S]*STEAM/);
+    assert.match(readFileSync(f, 'utf8'), /^ignorar: true$/m);
   } finally { rmSync(v, { recursive: true, force: true }); }
 });

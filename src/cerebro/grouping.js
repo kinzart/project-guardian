@@ -19,7 +19,7 @@ function rootOf(p, roots) {
 // level under a scanned root is an area ("pasta do geral", e.g. D:\APPS E PROGRAMAS) and the
 // folders right below it are the projects; anything deeper is content of that project. When the
 // first-level folder is itself a real project (repo, manifest, DAW file), it is the project.
-export function projectFolderFor(p, roots, strongTopLevel) {
+export function projectFolderFor(p, roots, strongTopLevel, strongPaths = []) {
   const root = rootOf(p, roots);
   if (!root) return { folder: p, area: null };
   const rootParts = splitPath(root).length;
@@ -28,7 +28,20 @@ export function projectFolderFor(p, roots, strongTopLevel) {
   if (depth <= 0) return { folder: p, area: null };
   const top = joinLike(p, parts.slice(0, rootParts + 1));
   if (depth === 1 || strongTopLevel.has(norm(top))) return { folder: top, area: null };
-  return { folder: joinLike(p, parts.slice(0, rootParts + 2)), area: top };
+  // A container without its own project files that holds two or more real projects in
+  // different subfolders (e.g. PLATAFORMA with MIX MASTER and CORTADOR) is an area too.
+  let level = rootParts + 2;
+  let area = top;
+  while (level < parts.length) {
+    const folder = parts.slice(0, level).join('/');
+    const nf = norm(folder);
+    if (strongPaths.includes(nf)) break;
+    const kids = new Set(strongPaths.filter((sp) => sp.startsWith(`${nf}/`)).map((sp) => sp.slice(nf.length + 1).split('/')[0]));
+    if (kids.size < 2) break;
+    area = joinLike(p, parts.slice(0, level));
+    level += 1;
+  }
+  return { folder: joinLike(p, parts.slice(0, level)), area };
 }
 
 // Folds every detected folder (and every folder an AI agent worked in) into its project folder.
@@ -40,6 +53,7 @@ export function groupProjects(projects, roots = [], sessions = []) {
     if (root && hasStrong(p) && splitPath(p.root_path).length === splitPath(root).length + 1) strongTopLevel.add(norm(p.root_path));
   }
   const byPath = new Map(projects.map((p) => [norm(p.root_path), p]));
+  const strongPaths = projects.filter((p) => !isLooseMedia(p) && Array.isArray(p.evidence)).map((p) => norm(p.root_path));
   const items = new Map();
   const areaOf = new Map();
   const childrenOf = new Map();
@@ -55,14 +69,14 @@ export function groupProjects(projects, roots = [], sessions = []) {
 
   for (const p of projects) {
     if (!rootOf(p.root_path, roots)) { itemFor(p.root_path); continue; }
-    const { folder, area } = projectFolderFor(p.root_path, roots, strongTopLevel);
+    const { folder, area } = projectFolderFor(p.root_path, roots, strongTopLevel, strongPaths);
     const item = itemFor(folder);
     if (area) areaOf.set(item.id, area);
     if (norm(folder) !== norm(p.root_path)) add(item.id, p);
   }
   for (const s of sessions) {
     if (!s.cwd || !rootOf(s.cwd, roots)) continue;
-    const { folder, area } = projectFolderFor(s.cwd, roots, strongTopLevel);
+    const { folder, area } = projectFolderFor(s.cwd, roots, strongTopLevel, strongPaths);
     if (norm(folder) === norm(rootOf(s.cwd, roots))) continue;
     if (splitPath(s.cwd).length === splitPath(rootOf(s.cwd, roots)).length + 1 && !strongTopLevel.has(norm(folder)) && !byPath.has(norm(folder))) continue; // agent ran in an area folder
     const item = itemFor(folder);
