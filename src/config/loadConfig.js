@@ -3,6 +3,9 @@ import { detectDefaultRoots } from './defaultRoots.js';
 
 const DEFAULTS = {
   scanRoots: [],
+  // Roots (e.g. a Google Drive streaming mount) where Guardian only lists and stats entries and
+  // never opens a file, so cloud-only files are not downloaded by a scan.
+  metadataOnlyRoots: [],
   exclude: [
     'node_modules',
     '.git',
@@ -98,6 +101,10 @@ const DEFAULTS = {
   obsidian: { vaultPath: null, debounceMs: 2000 },
   conversation: { provider: null },
   service: { reconciliationTimes: ['08:00', '15:00', '22:00'], logRetentionDays: 30, maxLogBytes: 52428800 },
+  // Cérebro hub: archiveDays = no change for this long marks a project "Arquivo — não mexer";
+  // nightlyTime = full scan + render + AI suggestions; suggestCommand = CLI that reads the
+  // inventory digest on stdin and prints suggestions (e.g. "codex exec -"), null to skip.
+  cerebro: { archiveDays: 365, nightlyTime: '03:00', suggestCommand: null },
 };
 
 // Loads guardian.config.json, creating it with sane defaults if missing, and auto-detecting
@@ -123,6 +130,7 @@ export function loadConfig(configPath, { autoDetectRoots = true } = {}) {
     obsidian: { ...DEFAULTS.obsidian, ...(raw.obsidian || {}) },
     conversation: { ...DEFAULTS.conversation, ...(raw.conversation || {}) },
     service: { ...DEFAULTS.service, ...(raw.service || {}) },
+    cerebro: { ...DEFAULTS.cerebro, ...(raw.cerebro || {}) },
   };
 
   let changed = !existsSync(configPath);

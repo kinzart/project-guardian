@@ -1,7 +1,7 @@
 import { statSync, existsSync, openSync, readSync, closeSync } from 'node:fs';
 import path from 'node:path';
 import { walkPruned } from './walker.js';
-import { scoreDirectory, confidenceForScore } from './evidence.js';
+import { scoreDirectory, confidenceForScore, extensionOf, KIND_BY_EXTENSION, MEDIA_KIND_BY_EXTENSION } from './evidence.js';
 import { inspectGit } from '../inspectors/gitInspector.js';
 import { inspectAum } from '../inspectors/aumInspector.js';
 import { inspectMarkdown } from '../inspectors/markdownInspector.js';
@@ -45,8 +45,25 @@ function safeReadPrefix(filePath, maxBytes) {
   }
 }
 
-function deriveName(dirPath, entryNames) {
-  if (entryNames.has('package.json')) {
+// What kind of work this folder holds: a creative project file wins, then code manifests,
+// then the majority media type among top-level files.
+export function deriveKind(entries, projectTypes) {
+  const counts = new Map();
+  for (const e of entries) {
+    if (e.isDirectory()) continue;
+    const ext = extensionOf(e.name);
+    if (KIND_BY_EXTENSION[ext]) return KIND_BY_EXTENSION[ext];
+    const media = MEDIA_KIND_BY_EXTENSION[ext];
+    if (media) counts.set(media, (counts.get(media) || 0) + 1);
+  }
+  if (projectTypes.some((t) => t !== 'unknown')) return 'code';
+  let best = null;
+  for (const [kind, n] of counts) if (!best || n > best[1]) best = [kind, n];
+  return best ? best[0] : 'other';
+}
+
+function deriveName(dirPath, entryNames, metadataOnly = false) {
+  if (!metadataOnly && entryNames.has('package.json')) {
     try {
       const text = safeReadPrefix(path.join(dirPath, 'package.json'), 4096);
       const parsed = JSON.parse(text);
@@ -67,8 +84,11 @@ export function isUnderRoot(candidatePath, rootPath) {
 
 function computeFingerprint(dirPath, entries) {
   let maxMtimeMs = 0;
-  const bump = (mtimeMs) => {
+  let latestName = null;
+  let latestEntryMs = 0;
+  const bump = (mtimeMs, name) => {
     if (mtimeMs > maxMtimeMs) maxMtimeMs = mtimeMs;
+    if (name && mtimeMs > latestEntryMs) { latestEntryMs = mtimeMs; latestName = name; }
   };
 
   for (const entry of entries) {
@@ -85,12 +105,15 @@ function computeFingerprint(dirPath, entries) {
       continue;
     }
     try {
-      bump(statSync(path.join(dirPath, entry.name)).mtimeMs);
+      bump(statSync(path.join(dirPath, entry.name)).mtimeMs, entry.name);
     } catch {
       // unreadable entry, ignore for fingerprint purposes
     }
   }
-  return `${entries.length}:${Math.round(maxMtimeMs)}`;
+  return {
+    fingerprint: `${entries.length}:${Math.round(maxMtimeMs)}`,
+    latestEntry: latestName ? { name: latestName, mtime: new Date(latestEntryMs).toISOString() } : null,
+  };
 }
 
 export async function runScan({ config, store, logger, roots }) {
@@ -99,6 +122,7 @@ export async function runScan({ config, store, logger, roots }) {
   const startedAt = new Date(startedAtMs).toISOString();
 
   const projectDirs = [];
+  const metadataOnlyRoots = config.metadataOnlyRoots || [];
   const shouldDescend = (dirPath, entries) => {
     const { score, evidence } = scoreDirectory(entries);
     const confidence = confidenceForScore(score, config.confidenceThresholds);
@@ -139,7 +163,7 @@ export async function runScan({ config, store, logger, roots }) {
       evidence,
       confidence,
       id: stableProjectId(dirPath),
-      name: deriveName(dirPath, entryNames),
+      name: deriveName(dirPath, entryNames, metadataOnlyRoots.some((r) => isUnderRoot(dirPath, r))),
       hasDefinitiveEvidence,
     };
   });
@@ -159,7 +183,8 @@ export async function runScan({ config, store, logger, roots }) {
   let projectsProcessed = 0;
 
   for (const { dirPath, entries, entryNames, score, evidence, confidence, id, name, hasDefinitiveEvidence } of baseInfos) {
-    const fingerprint = computeFingerprint(dirPath, entries);
+    const { fingerprint, latestEntry } = computeFingerprint(dirPath, entries);
+    const metadataOnly = metadataOnlyRoots.some((r) => isUnderRoot(dirPath, r));
     const existing = await store.getProject(id);
 
     // Family/nested-candidate annotations are pure in-memory heuristics over this scan's
@@ -177,14 +202,21 @@ export async function runScan({ config, store, logger, roots }) {
     };
 
     if (existing && existing.fingerprint === fingerprint) {
-      await store.upsertProject({ ...existing, last_seen: startedAt, ...familyFields });
+      await store.upsertProject({
+        ...existing,
+        kind: existing.kind ?? deriveKind(entries, existing.project_type || []),
+        metadata_only: metadataOnly,
+        latest_entry: latestEntry,
+        last_seen: startedAt,
+        ...familyFields,
+      });
       projectsUnchanged += 1;
       continue;
     }
 
     const errors = [];
     let git = null;
-    if (entryNames.has('.git')) {
+    if (!metadataOnly && entryNames.has('.git')) {
       try {
         git = await inspectGit(dirPath);
         if (git.errors?.length) errors.push(...git.errors.map((e) => `git: ${e}`));
@@ -194,7 +226,7 @@ export async function runScan({ config, store, logger, roots }) {
     }
 
     let aum = null;
-    if (entryNames.has('.memory')) {
+    if (!metadataOnly && entryNames.has('.memory')) {
       try {
         aum = inspectAum(dirPath);
         if (aum.errors?.length) errors.push(...aum.errors.map((e) => `aum: ${e}`));
@@ -204,10 +236,12 @@ export async function runScan({ config, store, logger, roots }) {
     }
 
     let markdown = null;
-    try {
-      markdown = inspectMarkdown(dirPath);
-    } catch (err) {
-      errors.push(`markdown: ${err.message}`);
+    if (!metadataOnly) {
+      try {
+        markdown = inspectMarkdown(dirPath);
+      } catch (err) {
+        errors.push(`markdown: ${err.message}`);
+      }
     }
 
     let rootMtimeIso = null;
@@ -219,16 +253,20 @@ export async function runScan({ config, store, logger, roots }) {
 
     const activity = classify({ git, aum, markdown, rootMtimeIso }, config.activityThresholds, startedAtMs);
 
+    const projectTypes = deriveProjectTypes(entryNames);
     const project = {
       id,
       name,
+      kind: deriveKind(entries, projectTypes),
+      metadata_only: metadataOnly,
+      latest_entry: latestEntry,
       root_path: dirPath,
       detected_at: existing?.detected_at || startedAt,
       last_seen: startedAt,
       confidence,
       evidence_score: score,
       evidence: evidence.map((e) => `${e.tier}:${e.name}(+${e.weight})`),
-      project_type: deriveProjectTypes(entryNames),
+      project_type: projectTypes,
       has_git: entryNames.has('.git'),
       has_aum: entryNames.has('.memory'),
       last_git_activity: git?.lastCommitDate || null,
