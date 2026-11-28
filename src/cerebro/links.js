@@ -11,6 +11,7 @@ import { runCommand } from './describe.js';
 const STOP = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'the', 'and', 'of', 'a', 'o', 'as', 'os', 'em', 'no', 'na', 'para', 'pra', 'com', 'nova', 'novo', 'new', 'pasta', 'folder', 'copy', 'copia', 'final', 'versao', 'version', 'arquivos', 'files', 'backup', 'old', 'teste', 'test', 'geral', 'outros', 'meu', 'minha', 'drive', 'projeto', 'projetos', 'project']);
 export const norm = (p) => String(p).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
 const plain = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const flat = (s) => plain(s).replace(/[^a-z0-9]/g, '');
 
 export function nameTokens(name) {
   return [...new Set(plain(name).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !STOP.has(t) && !/^\d+$/.test(t) && !/^v\d+$/.test(t)))];
@@ -23,6 +24,8 @@ export function findCandidates(projects, inv = {}, { minFileSize = 0 } = {}) {
   const toks = new Map(projects.map((p) => [p.id, nameTokens(p.name)]));
   const byToken = new Map();
   for (const p of projects) for (const t of toks.get(p.id)) { if (!byToken.has(t)) byToken.set(t, []); byToken.get(t).push(p); }
+  const nameCount = new Map();
+  for (const p of projects) nameCount.set(flat(p.name), (nameCount.get(flat(p.name)) || 0) + 1);
   const pairs = new Map();
   const pair = (a, b) => {
     if (a.id === b.id || related(a, b)) return null;
@@ -53,13 +56,19 @@ export function findCandidates(projects, inv = {}, { minFileSize = 0 } = {}) {
     const ta = toks.get(c.a.id); const tb = toks.get(c.b.id);
     c.nameScore = ta.length && tb.length ? c.sharedTokens.length / new Set([...ta, ...tb]).size : 0;
     c.contained = (ta.length >= 2 && ta.every((t) => tb.includes(t))) || (tb.length >= 2 && tb.every((t) => ta.includes(t)));
-    c.sameName = plain(c.a.name).replace(/[^a-z0-9]/g, '') === plain(c.b.name).replace(/[^a-z0-9]/g, '') && plain(c.a.name).replace(/[^a-z0-9]/g, '').length >= 4;
+    // the same name only counts when it is rare: a name used by 3+ folders (e.g. "FL Studio" inside
+    // every exported track) is a generic subfolder name, not one project in two places
+    const na = flat(c.a.name);
+    c.commonName = na === flat(c.b.name) && (nameCount.get(na) || 0) >= 3;
+    c.sameName = na === flat(c.b.name) && na.length >= 4 && !c.commonName;
     c.level = classify(c);
   }
   return [...pairs.values()].filter((c) => c.level !== 'nada');
 }
 
 export function classify(c) {
+  // the same generic name in many places says nothing by itself: only identical files count then
+  if (c.commonName) return c.sharedFiles >= 3 ? 'obvio' : c.sharedFiles >= 1 ? 'provavel' : 'nada';
   // identical files only count as obvious together with a name in common (or a lot of them):
   // shared libraries/installers would otherwise tie unrelated folders together
   if ((c.sharedFiles >= 3 && c.sharedTokens.length) || c.sharedFiles >= 25 || c.sameName || c.contained || c.nameScore >= 0.8) return 'obvio';

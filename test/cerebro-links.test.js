@@ -94,3 +94,11 @@ test('describe: folders without docs are described from their file listing', asy
     assert.equal(stats.done, 1); assert.match(prompt, /brutos\/take1\.mov/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a generic folder name used in 3+ places does not link by name alone', async () => {
+  const { findCandidates } = await import('../src/cerebro/links.js');
+  const ps = ['a', 'b', 'c'].map((x, i) => ({ id: i + 1, name: 'FL Studio', root_path: `D:/SAIDAS/Faixa ${x}/FL Studio` }));
+  ps.push({ id: 9, name: 'Banda Azul', root_path: 'D:/Banda Azul' }, { id: 10, name: 'Banda Azul', root_path: 'H:/Meu Drive/Banda Azul' });
+  const keys = findCandidates(ps, {}).map((c) => `${c.a.name}|${c.b.name}|${c.level}`);
+  assert.deepEqual(keys, ['Banda Azul|Banda Azul|obvio']);
+});
