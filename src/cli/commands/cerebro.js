@@ -2,7 +2,7 @@ import path from 'node:path';
 import { loadConfig } from '../../config/loadConfig.js';
 import { createStore } from '../../store/createStore.js';
 import { scanCommand } from './scan.js';
-import { obsidianCommand, agentHomes } from './obsidian.js';
+import { obsidianCommand, agentHomes, isPaused } from './obsidian.js';
 import { indexSessions, mapSessionsToProjects } from '../../sessions/index.js';
 import { findDuplicateGroups } from '../../cerebro/duplicates.js';
 import { buildInventoryDigest, runSuggestions } from '../../cerebro/suggest.js';
@@ -96,6 +96,7 @@ export async function describeNow({ projectRoot, store, config, force = false, m
   const sessions = await indexSessions({ ...agentHomes(config), cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
   let { items: projects } = groupProjects(await store.listProjects(), config.scanRoots || [], sessions, { listRoots: config.metadataOnlyRoots || [] });
   if (config.cerebro?.describeDrive === false) projects = projects.filter((p) => !p.metadata_only);
+  projects = projects.filter((p) => !isPaused(config, p.root_path));
   return describeProjects({
     projects,
     inventory: loadInventory(projectRoot),

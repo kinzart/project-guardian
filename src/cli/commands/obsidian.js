@@ -49,6 +49,7 @@ export async function renderVault({ projectRoot, config, projects: allProjects, 
     descriptions: loadDescriptions(path.join(projectRoot, 'data', 'cerebro-descricoes.json')),
     linksOf: linksByProject(links, items),
     inventoryOf: config.cerebro?.inventory === false ? null : (p) => {
+      if (isPaused(config, p.root_path)) return null; // disk taken out of the scans (e.g. failing): don't read it
       const inv = inventoryFolder(p.root_path, { skip: config.exclude || [], maxFiles: config.cerebro?.inventoryMaxFiles || 20000 });
       if (inv) summaries[p.root_path.toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '')] = summarizeInventory(inv);
       return inv;
@@ -61,6 +62,12 @@ export async function renderVault({ projectRoot, config, projects: allProjects, 
   }
   result.acertos = renderAcertos({ file: path.join(vault, 'Project Guardian', 'Acertos.md'), data: links, projects: items, link: result.link });
   return result;
+}
+
+// Roots moved to "scanRootsPausados" (e.g. a failing disk) are not read for inventory or descriptions.
+export function isPaused(config, p) {
+  const n = String(p).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
+  return (config.scanRootsPausados || []).some((r) => { const x = String(r).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, ''); return n === x || n.startsWith(`${x}/`); });
 }
 
 function configured(config) { return Boolean(config.obsidian?.vaultPath); }

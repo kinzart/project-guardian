@@ -91,7 +91,7 @@ const fileLink = (p, f) => `[${f.name.replace(/[[\]]/g, '')}](${fileUrl(path.joi
 // "Arquivos" section of a project note: what types are inside, the main folders, recent files,
 // a photo gallery and the videos. The full list goes to Arquivos/<projeto>.md.
 export function renderFiles(p, inv, fullListLink) {
-  if (!inv) return ['## Arquivos', '- (pasta não encontrada ou sem acesso)'];
+  if (!inv) return ['## Arquivos', '- (sem lista agora: pasta não encontrada, sem acesso ou disco pausado)'];
   const out = [`## Arquivos (${inv.total} · ${formatSize(inv.bytes)}${inv.truncated ? ' · lista cortada' : ''})`, ''];
   if (!inv.total) return [...out, '- pasta vazia'];
   out.push('| Tipo | Arquivos | Tamanho | Extensões |', '|---|---:|---:|---|');
