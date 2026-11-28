@@ -3,6 +3,9 @@ import { detectDefaultRoots } from './defaultRoots.js';
 
 const DEFAULTS = {
   scanRoots: [],
+  // Roots (e.g. a Google Drive streaming mount) where Guardian only lists and stats entries and
+  // never opens a file, so cloud-only files are not downloaded by a scan.
+  metadataOnlyRoots: [],
   exclude: [
     'node_modules',
     '.git',
@@ -51,6 +54,19 @@ const DEFAULTS = {
     '.eclipse',
     '.android',
     '.vscode-server',
+    // Trash and bundled-runtime folders: never someone's project.
+    '.trash',
+    '.Trash-1000',
+    '_internal',
+    'site-packages',
+    'npm-global',
+    'npm-cache',
+    '_npx',
+    '_cacache',
+    'steamapps',
+    'appcache',
+    'tmp',
+    'temp',
   ],
   // Compound path suffixes (not bare directory names) excluded only in this specific nested
   // location — e.g. a real project may legitimately have its own "extensions" folder, so only
@@ -98,6 +114,10 @@ const DEFAULTS = {
   obsidian: { vaultPath: null, debounceMs: 2000 },
   conversation: { provider: null },
   service: { reconciliationTimes: ['08:00', '15:00', '22:00'], logRetentionDays: 30, maxLogBytes: 52428800 },
+  // Cérebro hub: archiveDays = no change for this long marks a project "Arquivo — não mexer";
+  // nightlyTime = full scan + render + AI suggestions; suggestCommand = CLI that reads the
+  // inventory digest on stdin and prints suggestions (e.g. "codex exec --skip-git-repo-check -"), null to skip.
+  cerebro: { archiveDays: 365, nightlyTime: '03:00', suggestCommand: null },
 };
 
 // Loads guardian.config.json, creating it with sane defaults if missing, and auto-detecting
@@ -123,7 +143,15 @@ export function loadConfig(configPath, { autoDetectRoots = true } = {}) {
     obsidian: { ...DEFAULTS.obsidian, ...(raw.obsidian || {}) },
     conversation: { ...DEFAULTS.conversation, ...(raw.conversation || {}) },
     service: { ...DEFAULTS.service, ...(raw.service || {}) },
+    cerebro: { ...DEFAULTS.cerebro, ...(raw.cerebro || {}) },
   };
+  // The Obsidian vault is output, never a project.
+  if (config.obsidian?.vaultPath) {
+    const vault = String(config.obsidian.vaultPath).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    config.excludePaths = [...new Set([...(config.excludePaths || []), vault])];
+  }
+  // Built-in excludes always apply, on top of the person's own list.
+  config.exclude = [...new Set([...DEFAULTS.exclude, ...(Array.isArray(raw.exclude) ? raw.exclude : [])])];
 
   let changed = !existsSync(configPath);
 

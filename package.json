@@ -1,6 +1,6 @@
 {
   "name": "@kinzart/project-guardian",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Local, Windows-first project inventory and cross-agent activity supervisor.",
   "type": "module",
   "license": "MIT",
