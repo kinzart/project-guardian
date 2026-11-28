@@ -66,6 +66,25 @@ Pasta: ${project.root_path}
 ${docsText}`;
 }
 
+// For folders without docs: the AI reads the file listing (names, types, dates) instead.
+export function buildListingPrompt(project, s) {
+  return `Você descreve projetos para o "Cérebro", o painel de projetos do Paixão (músico, produtor, videomaker e desenvolvedor). Esta pasta não tem documentação: deduza pelo que tem dentro. Responda SÓ com um JSON, sem nada antes ou depois:
+{"o_que_e": "uma frase dizendo o que parece ser (ex.: show gravado do artista X, clipe, edital, site)",
+ "feito": "o que já existe ali (2 a 3 frases: brutos, editados, mixes, artes, documentos)",
+ "comecou": "quando/como começou, pelas datas e nomes",
+ "agora": "em que ponto parece estar e o que parece faltar",
+ "maturidade": "inacabado" | "quase resolvido" | "resolvido e funcional" | "não dá pra saber",
+ "motivo": "por que essa maturidade, em uma frase"}
+Ex.: só brutos = inacabado; brutos + editado final/exportado = resolvido e funcional. Escreva em português simples. Não execute comandos nem abra arquivos.
+
+Projeto: ${project.name}
+Pasta: ${project.root_path}
+Arquivos: ${s.total} · tipos ${JSON.stringify(s.types || {})} · de ${String(s.oldest || '').slice(0, 10)} a ${String(s.newest || '').slice(0, 10)}
+Pastas: ${(s.folders || []).join('; ') || '—'}
+Arquivos mais recentes:
+${(s.sample || []).join('\n')}`;
+}
+
 export function parseDescription(out) {
   const text = String(out || '');
   for (let s = text.indexOf('{'); s >= 0; s = text.indexOf('{', s + 1)) {
@@ -105,20 +124,21 @@ export function loadDescriptions(cachePath) {
   try { return JSON.parse(readFileSync(cachePath, 'utf8')); } catch { return {}; }
 }
 
-const keyOf = (p) => String(p.root_path).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
+export const keyOf = (p) => String(p.root_path).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
 export const descriptionFor = (cache, p) => cache[keyOf(p)]?.desc || null;
 
 // Describes every project whose docs changed since last time, `concurrency` at a time.
-export async function describeProjects({ projects, cachePath, command = DEFAULT_DESCRIBE_COMMAND, concurrency = 3, force = false, maxProjects = 0, log = () => {}, run = runCommand, now = () => new Date().toISOString() }) {
+export async function describeProjects({ projects, cachePath, command = DEFAULT_DESCRIBE_COMMAND, concurrency = 3, force = false, maxProjects = 0, log = () => {}, run = runCommand, now = () => new Date().toISOString(), inventory = {} }) {
   const cache = loadDescriptions(cachePath);
   const todo = [];
   for (const p of projects) {
     if (!existsSync(p.root_path)) continue;
     const docs = findDocs(p.root_path);
-    if (!docs.length) continue;
-    const key = docsKey(docs);
+    const s = inventory[keyOf(p)];
+    if (!docs.length && !(s && s.total > 0)) continue;
+    const key = docs.length ? docsKey(docs) : `lista:${s.total}:${s.newest}`;
     if (!force && cache[keyOf(p)]?.key === key && cache[keyOf(p)]?.desc) continue;
-    todo.push({ p, docs, key });
+    todo.push({ p, docs, key, s });
   }
   const queue = maxProjects > 0 ? todo.slice(0, maxProjects) : todo;
   const stats = { pending: todo.length, done: 0, failed: 0 };
@@ -126,11 +146,11 @@ export async function describeProjects({ projects, cachePath, command = DEFAULT_
   let i = 0;
   const worker = async () => {
     while (i < queue.length) {
-      const { p, docs, key } = queue[i++];
-      const res = await run(command, buildPrompt(p, readDocs(p.root_path, docs)));
+      const { p, docs, key, s } = queue[i++];
+      const res = await run(command, docs.length ? buildPrompt(p, readDocs(p.root_path, docs)) : buildListingPrompt(p, s));
       const desc = res.ok ? parseDescription(res.out) : null;
       if (desc) {
-        cache[keyOf(p)] = { key, desc: { ...desc, docs: docs.map((d) => d.rel), em: now() } };
+        cache[keyOf(p)] = { key, desc: { ...desc, docs: docs.length ? docs.map((d) => d.rel) : ['(lista de arquivos)'], em: now() } };
         stats.done += 1; save(); log(`descrito: ${p.name} — ${desc.maturidade}`);
       } else { stats.failed += 1; log(`falhou: ${p.name} — ${res.ok ? 'resposta sem JSON' : res.err}`); }
     }

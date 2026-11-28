@@ -143,7 +143,7 @@ function writeFileList(file, p, inv) {
   writeFileSync(file, next);
 }
 
-export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), areaByItem = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365, inventoryOf = (p) => inventoryFolder(p.root_path), descriptions = {} }) {
+export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), areaByItem = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365, inventoryOf = (p) => inventoryFolder(p.root_path), descriptions = {}, linksOf = new Map() }) {
   const root = path.join(vaultPath, ROOT);
   const runtime = new Map(runtimeStates.map((s) => [s.project_id, s]));
   const intel = new Map(intelligence.map((s) => [s.project_id, s]));
@@ -179,6 +179,7 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
     ].filter((q, idx, a) => a.findIndex((x) => x.id === q.id) === idx);
     const inv = inventoryOf ? inventoryOf(p) : null;
     const desc = descriptionFor(descriptions, p);
+    const myLinks = (linksOf.get(p.id) || []).filter((l, idx, a) => a.findIndex((x) => x.q.id === l.q.id) === idx);
     const types = typesPresent(inv);
     const frontmatter = [
       `status: ${yaml(STATUS_LABEL[status])}`,
@@ -192,6 +193,7 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
       `excluir: ${marked}`,
       `ignorar: ${ignored}`,
       `caminho: ${yaml(p.root_path)}`,
+      ...(myLinks.length ? [`ligado_a: [${myLinks.map((l) => yaml(link(l.q))).join(', ')}]`] : []),
       ...(desc ? [`maturidade: ${yaml(desc.maturidade)}`, `descricao: ${yaml(desc.o_que_e)}`] : []),
       ...(inv ? [
         `arquivos: ${inv.total}`,
@@ -250,6 +252,9 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
         : '- —',
       '',
       ...renderFiles(p, inv, `${ROOT}/Arquivos/${stem(p)}`),
+      '',
+      `## Ligações${myLinks.length ? ` (${myLinks.length})` : ''}`,
+      myLinks.length ? myLinks.map((l) => `- ${link(l.q)}${l.tipo ? ` — ${l.tipo}` : ''}${l.motivo ? ` · ${l.motivo}` : ''} _(${l.por || 'IA'})_ · \`${l.q.root_path}\``).join('\n') : '- — _(dúvidas ficam em [[Project Guardian/Acertos|Acertos]])_',
       '',
       '## Relacionados',
       related.length ? related.map((q) => `- ${link(q)} (${q.root_path})`).join('\n') : '- —',
@@ -314,6 +319,16 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
     }
     mapa.push('');
   }
+  const seenPair = new Set(); const cross = [];
+  for (const x of rows) {
+    for (const l of linksOf.get(x.p.id) || []) {
+      const k = [x.p.id, l.q.id].sort().join('|');
+      if (seenPair.has(k)) continue; seenPair.add(k);
+      const other = rows.find((y) => y.p.id === l.q.id);
+      if (other && other.place.root !== x.place.root) cross.push(`- ${link(x.p)} (${x.place.root}) ↔ ${link(l.q)} (${other.place.root})${l.tipo ? ` — ${l.tipo}` : ''}`);
+    }
+  }
+  if (cross.length) mapa.push('## Ligações entre lugares', '_Mesma coisa ou mesmo trabalho em lugares diferentes (PC ↔ Drive)._', ...cross, '');
   changed = writeNote(path.join(root, 'Mapa.md'), { generated: mapa.join('\n') }) || changed;
 
   const dups = ['# Possíveis duplicados', '', '_Só sugestão. Nada é movido ou apagado._', ''];
@@ -356,5 +371,5 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
     const tpl = readFileSync(new URL('../cerebro/templates/TRIAGEM-HERMES.md', import.meta.url), 'utf8');
     writeFileSync(task, tpl.replaceAll('{{VAULT}}', vaultPath.replace(/[\\/]+$/, '')));
   }
-  return { root, changed, projectsRendered: projects.length, duplicates: duplicates.length, removed, marked: rows.filter((x) => x.marked).map((x) => x.p) };
+  return { root, changed, link, projectsRendered: projects.length, duplicates: duplicates.length, removed, marked: rows.filter((x) => x.marked).map((x) => x.p) };
 }

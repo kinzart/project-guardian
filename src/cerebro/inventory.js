@@ -41,13 +41,14 @@ export function formatSize(b) {
 // Walks `root` (depth-first, no symlinks). Returns null when the folder can't be read.
 export function inventoryFolder(root, { maxFiles = 20000, skip = [] } = {}) {
   const skipDirs = new Set([...SKIP_DIRS, ...skip.map((s) => String(s).toLowerCase())]);
-  const inv = { root, files: [], total: 0, bytes: 0, truncated: false, skipped: [], byType: new Map(), folders: new Map() };
+  const inv = { root, files: [], total: 0, bytes: 0, truncated: false, skipped: [], emptyDirs: [], byType: new Map(), folders: new Map() };
   try { readdirSync(root); } catch { return null; }
   const stack = [''];
   while (stack.length) {
     const rel = stack.pop();
     let entries;
     try { entries = readdirSync(path.join(root, rel), { withFileTypes: true }); } catch { continue; }
+    if (!entries.length && rel && inv.emptyDirs.length < 500) inv.emptyDirs.push(rel);
     for (const e of entries) {
       const childRel = rel ? path.join(rel, e.name) : e.name;
       if (e.isDirectory()) {
@@ -78,4 +79,23 @@ export function inventoryFolder(root, { maxFiles = 20000, skip = [] } = {}) {
 
 export function typesPresent(inv) {
   return inv ? [...inv.byType.entries()].sort((a, b) => b[1].count - a[1].count).map(([k]) => k) : [];
+}
+
+// Compact, JSON-friendly summary kept between runs (for links, descriptions and empty folders).
+export function summarizeInventory(inv, { maxNames = 3000 } = {}) {
+  if (!inv) return null;
+  const days = new Map();
+  for (const f of inv.files) { const d = f.mtime.slice(0, 10); days.set(d, (days.get(d) || 0) + 1); }
+  const sorted = [...inv.files].sort((a, b) => b.size - a.size);
+  return {
+    total: inv.total, bytes: inv.bytes,
+    newest: inv.files[0]?.mtime || null, oldest: inv.files.length ? inv.files[inv.files.length - 1].mtime : null,
+    types: Object.fromEntries([...inv.byType.entries()].map(([k, v]) => [k, v.count])),
+    folders: [...inv.folders.keys()].filter(Boolean).slice(0, 60),
+    days: Object.fromEntries([...days.entries()].sort((a, b) => b[1] - a[1]).slice(0, 120)),
+    // name|size of the biggest files: identical pairs across folders mean the same material
+    files: sorted.slice(0, maxNames).map((f) => `${f.name.toLowerCase()}|${f.size}`),
+    sample: inv.files.slice(0, 80).map((f) => f.rel.replace(/\\/g, '/')),
+    emptyDirs: inv.emptyDirs.slice(0, 200),
+  };
 }

@@ -1,11 +1,13 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '../../config/loadConfig.js';
 import { createStore } from '../../store/createStore.js';
 import { refreshRuntimeStates } from '../../activity/runtime-rollup.js';
 import os from 'node:os';
 import { renderCerebroVault } from '../../obsidian/cerebro.js';
-import { inventoryFolder } from '../../cerebro/inventory.js';
+import { inventoryFolder, summarizeInventory } from '../../cerebro/inventory.js';
+import { applyAcertos, linksByProject, loadLinks, renderAcertos, saveLinks } from '../../cerebro/links.js';
+import { writeEmptyFolders } from '../../cerebro/empty.js';
 import { loadDescriptions } from '../../cerebro/describe.js';
 import { indexSessions, mapSessionsToProjects } from '../../sessions/index.js';
 import { groupProjects } from '../../cerebro/grouping.js';
@@ -27,8 +29,14 @@ export async function renderVault({ projectRoot, config, projects: allProjects, 
   const sessions = (await indexSessions({ ...homes, cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') })).filter((s) => !inVault(s.cwd));
   projects = projects.filter((p) => !inVault(p.root_path));
   const { items, childrenOf, areaOf: areaByItem } = groupProjects(projects, config.scanRoots || [], sessions, { listRoots: config.metadataOnlyRoots || [] });
-  return renderCerebroVault({
-    vaultPath: config.obsidian.vaultPath,
+  const vault = config.obsidian.vaultPath;
+  // the person's ticks in Acertos.md become links before the notes are written
+  const linksPath = path.join(projectRoot, 'data', 'cerebro-ligacoes.json');
+  const links = loadLinks(linksPath); links.pairs ||= {};
+  if (applyAcertos(path.join(vault, 'Project Guardian', 'Acertos.md'), links)) saveLinks(linksPath, links);
+  const summaries = {};
+  const result = renderCerebroVault({
+    vaultPath: vault,
     projects: items,
     childrenOf,
     areaByItem,
@@ -39,8 +47,20 @@ export async function renderVault({ projectRoot, config, projects: allProjects, 
     now,
     archiveDays: config.cerebro?.archiveDays ?? 365,
     descriptions: loadDescriptions(path.join(projectRoot, 'data', 'cerebro-descricoes.json')),
-    inventoryOf: config.cerebro?.inventory === false ? null : (p) => inventoryFolder(p.root_path, { skip: config.exclude || [], maxFiles: config.cerebro?.inventoryMaxFiles || 20000 }),
+    linksOf: linksByProject(links, items),
+    inventoryOf: config.cerebro?.inventory === false ? null : (p) => {
+      const inv = inventoryFolder(p.root_path, { skip: config.exclude || [], maxFiles: config.cerebro?.inventoryMaxFiles || 20000 });
+      if (inv) summaries[p.root_path.toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '')] = summarizeInventory(inv);
+      return inv;
+    },
   });
+  if (Object.keys(summaries).length) {
+    mkdirSync(path.join(projectRoot, 'data'), { recursive: true });
+    writeFileSync(path.join(projectRoot, 'data', 'cerebro-inventario.json'), `${JSON.stringify(summaries)}\n`);
+    result.emptyFolders = writeEmptyFolders({ file: path.join(vault, 'Triagem', 'Pastas vazias.md'), projects: items, summaries });
+  }
+  result.acertos = renderAcertos({ file: path.join(vault, 'Project Guardian', 'Acertos.md'), data: links, projects: items, link: result.link });
+  return result;
 }
 
 function configured(config) { return Boolean(config.obsidian?.vaultPath); }
