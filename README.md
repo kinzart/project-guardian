@@ -53,6 +53,8 @@ Each project note shows status, last change (and which file), the universal summ
 
 Each note also has an **Arquivos** section: every file inside the project by type (vídeo, áudio, projeto de música, imagem, design, planilha…), the main folders, a photo gallery (up to 12 thumbnails), the videos, the latest files, and a link to `Project Guardian/Arquivos/<projeto>.md` with the complete list grouped by folder. The frontmatter gets `arquivos`, `tamanho`, `tem` and `tags: tem/<tipo>` so the Obsidian graph and search can filter by what a folder contains. Only names, sizes and dates are read (opening a note with Drive photos downloads those thumbnails). Turn it off with `cerebro.inventory: false`.
 
+**Descrição e maturidade.** `guardian cerebro descrever [N] [--todos]` (also part of the nightly) finds each project's `.md` docs (README, CLAUDE.md, AGENTS.md, docs/…), sends their text to a cheap AI (`cerebro.describeCommand`, default `codex exec … -m gpt-6-luna` with low effort, read-only, 3 at a time) and writes a **Descrição** section: what it is, what was done, where it started, where it is now, and `maturidade` (inacabado / quase resolvido / resolvido e funcional). It is cached in `data/cerebro-descricoes.json` and only re-run when the docs change. Set `cerebro.describe: false` to turn it off, or `cerebro.describeDrive: false` to skip Google Drive folders (their .md files are downloaded to be read).
+
 ## Privacy
 
 Guardian stores structural metadata only. It does not store prompts, assistant responses, reasoning, transcripts, raw terminal output, environment values, credentials, or secret-file contents. See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).

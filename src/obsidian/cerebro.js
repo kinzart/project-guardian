@@ -8,6 +8,7 @@ import { fileUrl, writeLauncher } from '../cerebro/launchers.js';
 import { buildUniversalSummary, daysSince, isArchived, kindLabel, lastActivityIso, readInbox, safeName, INBOX_DIR } from '../cerebro/summary.js';
 import { findDuplicateGroups } from '../cerebro/duplicates.js';
 import { relativeLabel } from '../cerebro/grouping.js';
+import { descriptionFor } from '../cerebro/describe.js';
 import { inventoryFolder, formatSize, typesPresent, TYPE_LABEL, PREVIEWABLE } from '../cerebro/inventory.js';
 
 const ROOT = 'Project Guardian';
@@ -142,7 +143,7 @@ function writeFileList(file, p, inv) {
   writeFileSync(file, next);
 }
 
-export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), areaByItem = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365, inventoryOf = (p) => inventoryFolder(p.root_path) }) {
+export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map(), areaByItem = new Map(), runtimeStates = [], intelligence = [], sessionsByProject = new Map(), roots = [], now = Date.now(), archiveDays = 365, inventoryOf = (p) => inventoryFolder(p.root_path), descriptions = {} }) {
   const root = path.join(vaultPath, ROOT);
   const runtime = new Map(runtimeStates.map((s) => [s.project_id, s]));
   const intel = new Map(intelligence.map((s) => [s.project_id, s]));
@@ -177,6 +178,7 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
       ...(dupOf.get(p.id)?.projects || []).filter((q) => q.id !== p.id),
     ].filter((q, idx, a) => a.findIndex((x) => x.id === q.id) === idx);
     const inv = inventoryOf ? inventoryOf(p) : null;
+    const desc = descriptionFor(descriptions, p);
     const types = typesPresent(inv);
     const frontmatter = [
       `status: ${yaml(STATUS_LABEL[status])}`,
@@ -190,6 +192,7 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
       `excluir: ${marked}`,
       `ignorar: ${ignored}`,
       `caminho: ${yaml(p.root_path)}`,
+      ...(desc ? [`maturidade: ${yaml(desc.maturidade)}`, `descricao: ${yaml(desc.o_que_e)}`] : []),
       ...(inv ? [
         `arquivos: ${inv.total}`,
         `tamanho: ${yaml(formatSize(inv.bytes))}`,
@@ -209,6 +212,19 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
       `**Status:** ${STATUS_LABEL[status]} · **Última mudança:** ${fmtDate(last)}${p.latest_entry?.name ? ` (${p.latest_entry.name})` : ''}`,
       `**Pasta:** [\`${p.root_path}\`](${fileUrl(p.root_path)})${p.metadata_only ? ' · Google Drive (só leitura de nomes)' : ''}`,
       '',
+      ...(desc ? [
+        '## Descrição',
+        `**${desc.o_que_e}**`,
+        '',
+        `**Maturidade:** ${desc.maturidade}${desc.motivo ? ` — ${desc.motivo}` : ''}`,
+        '',
+        ...(desc.feito ? [`- **Feito:** ${desc.feito}`] : []),
+        ...(desc.comecou ? [`- **Começou:** ${desc.comecou}`] : []),
+        ...(desc.agora ? [`- **Agora:** ${desc.agora}`] : []),
+        '',
+        `_Lido de ${(desc.docs || []).map((d) => `\`${d}\``).join(', ')} em ${fmtDate(desc.em)}._`,
+        '',
+      ] : []),
       '## Resumo universal',
       ...summary,
       '',
@@ -243,8 +259,8 @@ export function renderCerebroVault({ vaultPath, projects, childrenOf = new Map()
 
   const byStatus = (s) => rows.filter((x) => x.status === s).sort((a, b) => String(b.last).localeCompare(String(a.last)));
   const line = ({ p, sessions, last }) => {
-    const s = sessions[0];
-    return `- ${link(p)} — ${kindLabel(p.kind)} · ${fmtDate(last)}${s ? ` · ${agentLabel(s.agent)} ${fmtDate(s.updated_at)}` : ''}`;
+    const s = sessions[0]; const d = descriptionFor(descriptions, p);
+    return `- ${link(p)} — ${kindLabel(p.kind)} · ${fmtDate(last)}${s ? ` · ${agentLabel(s.agent)} ${fmtDate(s.updated_at)}` : ''}${d ? ` · ${d.maturidade}` : ''}`;
   };
   const section = (title, s, hint = '') => {
     const items = byStatus(s);

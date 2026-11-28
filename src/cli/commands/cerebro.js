@@ -9,6 +9,7 @@ import { buildInventoryDigest, runSuggestions } from '../../cerebro/suggest.js';
 import { installRule, removeRule } from '../../cerebro/rule.js';
 import { cleanup, cleanupTriage, readTriageItems } from '../../cerebro/cleanup.js';
 import { groupProjects } from '../../cerebro/grouping.js';
+import { describeProjects, DEFAULT_DESCRIBE_COMMAND } from '../../cerebro/describe.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
 
 const ACTION_LABEL = { lixeira: 'enviado para a Lixeira', recusado: 'NÃO apagado', erro: 'erro', pendente: 'vai para a Lixeira' };
@@ -48,12 +49,30 @@ export async function suggestNow({ projectRoot, store, config }) {
   return runSuggestions({ command: config.cerebro.suggestCommand, digest, outPath: path.join(config.obsidian.vaultPath, 'Project Guardian', 'Sugestões.md') });
 }
 
+// Reads the .md docs of each project with a cheap AI and caches a short description + maturity.
+export async function describeNow({ projectRoot, store, config, force = false, maxProjects = 0 }) {
+  if (config.cerebro?.describe === false) return null;
+  const sessions = await indexSessions({ ...agentHomes(config), cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
+  let { items: projects } = groupProjects(await store.listProjects(), config.scanRoots || [], sessions);
+  if (config.cerebro?.describeDrive === false) projects = projects.filter((p) => !p.metadata_only);
+  return describeProjects({
+    projects,
+    cachePath: path.join(projectRoot, 'data', 'cerebro-descricoes.json'),
+    command: config.cerebro?.describeCommand || DEFAULT_DESCRIBE_COMMAND,
+    concurrency: config.cerebro?.describeConcurrency || 3,
+    force, maxProjects,
+    log: (m) => console.log(`Cérebro descrever: ${m}`),
+  });
+}
+
 export async function nightly({ projectRoot, store, config }) {
   await scanCommand({ projectRoot, store, config });
   if (!config.obsidian?.vaultPath) return { rendered: false };
   await obsidianCommand({ projectRoot, args: ['render'], store, config });
+  const descriptions = await describeNow({ projectRoot, store, config });
+  if (descriptions?.done) await obsidianCommand({ projectRoot, args: ['render'], store, config });
   const suggestions = await suggestNow({ projectRoot, store, config });
-  return { rendered: true, suggestions };
+  return { rendered: true, descriptions, suggestions };
 }
 
 function ruleFiles(config) {
@@ -73,7 +92,7 @@ export async function cerebroCommand({ projectRoot, args, store: suppliedStore =
     }
     if (sub === 'remove') { for (const f of ruleFiles(config)) console.log(`${removeRule(f) ? 'regra removida' : 'sem regra'}: ${f}`); return true; }
   }
-  if (action === 'nightly' || action === 'suggest' || action === 'limpar') {
+  if (action === 'nightly' || action === 'suggest' || action === 'limpar' || action === 'descrever') {
     let created = null;
     try {
       created = suppliedStore ? null : await createStore(path.join(projectRoot, 'data', 'guardian.db'));
@@ -84,10 +103,17 @@ export async function cerebroCommand({ projectRoot, args, store: suppliedStore =
     const store = suppliedStore || created.store;
     try {
       if (action === 'limpar') return await limpar({ projectRoot, store, config, confirm: args.includes('--confirmar') });
+      if (action === 'descrever') {
+        const n = args.find((a) => /^\d+$/.test(a));
+        const stats = await describeNow({ projectRoot, store, config, force: args.includes('--todos'), maxProjects: n ? Number(n) : 0 });
+        if (stats?.done && config.obsidian?.vaultPath) await obsidianCommand({ projectRoot, args: ['render'], store, config });
+        console.log(`Cérebro descrever: ${JSON.stringify(stats)}`);
+        return stats;
+      }
       const result = action === 'nightly' ? await nightly({ projectRoot, store, config }) : await suggestNow({ projectRoot, store, config });
       console.log(`Cérebro ${action}: ${JSON.stringify(result)}`);
       return result;
     } finally { if (created) await store.close(); }
   }
-  console.error('Usage: guardian cerebro <nightly|suggest|limpar [--confirmar]|rule install|rule remove>'); process.exitCode = 1; return null;
+  console.error('Usage: guardian cerebro <nightly|suggest|descrever [N] [--todos]|limpar [--confirmar]|rule install|rule remove>'); process.exitCode = 1; return null;
 }
