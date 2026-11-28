@@ -26,7 +26,7 @@ export async function renderVault({ projectRoot, config, projects: allProjects, 
   const inVault = (p) => { const n = String(p || '').toLowerCase().replace(/\\/g, '/'); return n === vaultNorm || n.startsWith(`${vaultNorm}/`); };
   const sessions = (await indexSessions({ ...homes, cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') })).filter((s) => !inVault(s.cwd));
   projects = projects.filter((p) => !inVault(p.root_path));
-  const { items, childrenOf, areaOf: areaByItem } = groupProjects(projects, config.scanRoots || [], sessions);
+  const { items, childrenOf, areaOf: areaByItem } = groupProjects(projects, config.scanRoots || [], sessions, { listRoots: config.metadataOnlyRoots || [] });
   return renderCerebroVault({
     vaultPath: config.obsidian.vaultPath,
     projects: items,

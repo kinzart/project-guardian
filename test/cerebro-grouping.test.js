@@ -106,3 +106,18 @@ test('output folders with DAW files deep inside a container stay content', () =>
   assert.deepEqual(items.map((i) => i.name).sort(), ['CORTADOR', 'MIX MASTER', 'PLATAFORMA']);
   assert.equal(childrenOf.get(items.find((i) => i.name === 'PLATAFORMA').id).length, 3);
 });
+
+test('grouping: Drive roots list each area/folder as a project; the drive root and loose areas stop being items', () => {
+  const tree = { 'H:\\Meu Drive': ['H:\\Meu Drive\\NOVA', 'H:\\Meu Drive\\SOLO'], 'H:\\Meu Drive\\NOVA': ['H:\\Meu Drive\\NOVA\\BLUES', 'H:\\Meu Drive\\NOVA\\CLIPE'], 'H:\\Meu Drive\\SOLO': [] };
+  const projects = [
+    { id: 'root', name: 'Meu Drive', root_path: 'H:\\Meu Drive', evidence: ['media:10'], kind: 'video' },
+    { id: 'nova', name: 'NOVA', root_path: 'H:\\Meu Drive\\NOVA', evidence: ['media:10'], kind: 'video' },
+    { id: 'deep', name: 'takes', root_path: 'H:\\Meu Drive\\NOVA\\CLIPE\\takes', evidence: ['media:12'], kind: 'video' },
+  ];
+  const { items, areaOf, childrenOf } = groupProjects(projects, ['H:\\Meu Drive'], [], { listRoots: ['H:\\Meu Drive'], dirsOf: (d) => tree[d] || [] });
+  const names = items.map((i) => i.root_path).sort();
+  assert.deepEqual(names, ['H:\\Meu Drive\\NOVA\\BLUES', 'H:\\Meu Drive\\NOVA\\CLIPE', 'H:\\Meu Drive\\SOLO']);
+  const clipe = items.find((i) => i.root_path.endsWith('CLIPE'));
+  assert.equal(areaOf.get(clipe.id), 'H:\\Meu Drive\\NOVA');
+  assert.equal((childrenOf.get(clipe.id) || []).length, 1);
+});

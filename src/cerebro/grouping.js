@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 import { stableProjectId } from '../util/paths.js';
 
 const norm = (p) => String(p).toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
@@ -49,7 +50,12 @@ export function projectFolderFor(p, roots, strongTopLevel, strongPaths = []) {
 
 // Folds every detected folder (and every folder an AI agent worked in) into its project folder.
 // Returns the items to show, what each item contains (deeper folders) and the area of each item.
-export function groupProjects(projects, roots = [], allSessions = [], { exists = existsSync } = {}) {
+const listDirs = (dir) => { try { return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('$')).map((e) => path.join(dir, e.name)); } catch { return []; } };
+
+// `listRoots` (the Google Drive roots) get one item per project folder read straight from the disk
+// (area → folders inside it; an area without subfolders is the project), because nothing inside
+// a Drive is opened, so the scanner finds little evidence there.
+export function groupProjects(projects, roots = [], allSessions = [], { exists = existsSync, listRoots = [], dirsOf = listDirs } = {}) {
   // sessions whose folder no longer exists don't create projects
   const sessions = allSessions.filter((s) => s.cwd && exists(s.cwd));
   const strongTopLevel = new Set();
@@ -91,6 +97,34 @@ export function groupProjects(projects, roots = [], allSessions = [], { exists =
     const item = itemFor(folder);
     if (area) areaOf.set(item.id, area);
     if (item.is_folder && item.kind === null) item.evidence = ['ai-session'];
+  }
+
+  for (const lr of listRoots) {
+    if (!roots.some((r) => norm(r) === norm(lr))) continue;
+    const areas = dirsOf(lr);
+    if (!areas.length) continue;
+    // The Drive root and areas without their own project files stop being items: their folders are.
+    const dropped = [];
+    for (const f of [lr, ...areas]) {
+      const it = items.get(norm(f));
+      if (it && (norm(f) === norm(lr) || (!strongTopLevel.has(norm(f)) && dirsOf(f).length))) { items.delete(norm(f)); dropped.push(it); }
+    }
+    for (const area of areas) {
+      const inside = dirsOf(area);
+      for (const folder of inside.length ? inside : [area]) {
+        const key = norm(folder);
+        if (items.has(key) || [...items.keys()].some((k) => key.startsWith(`${k}/`) || k.startsWith(`${key}/`))) continue;
+        const item = itemFor(folder);
+        if (folder !== area) areaOf.set(item.id, area);
+      }
+    }
+    for (const d of dropped) {
+      for (const k of childrenOf.get(d.id) || []) {
+        const owner = [...items.values()].filter((it) => under(k.root_path, it.root_path)).sort((a, b) => norm(b.root_path).length - norm(a.root_path).length)[0];
+        if (owner) add(owner.id, k);
+      }
+      childrenOf.delete(d.id);
+    }
   }
 
   for (const item of items.values()) {
