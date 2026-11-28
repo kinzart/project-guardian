@@ -60,7 +60,9 @@ export function findCandidates(projects, inv = {}, { minFileSize = 0 } = {}) {
 }
 
 export function classify(c) {
-  if (c.sharedFiles >= 3 || c.sameName || c.contained || c.nameScore >= 0.8) return 'obvio';
+  // identical files only count as obvious together with a name in common (or a lot of them):
+  // shared libraries/installers would otherwise tie unrelated folders together
+  if ((c.sharedFiles >= 3 && c.sharedTokens.length) || c.sharedFiles >= 25 || c.sameName || c.contained || c.nameScore >= 0.8) return 'obvio';
   if (c.sharedFiles >= 1 || c.nameScore >= 0.34 || (c.sharedTokens.length && c.sharedDays >= 2)) return 'provavel';
   return 'nada';
 }
@@ -124,9 +126,13 @@ export async function decideLinks({ candidates, cachePath, inv, descOf, command,
     const base = { a: c.a.root_path, b: c.b.root_path, motivo_sinais: reasonText(c), sig: sig(c) };
     if (prev?.pessoa) { data.pairs[c.key] = { ...prev, ...base }; continue; } // the person decided: keep
     if (c.level === 'obvio') { data.pairs[c.key] = { ...base, relacao: 'sim', por: 'óbvio', tipo: prev?.tipo || '' }; continue; }
-    if (prev && prev.sig === base.sig && prev.relacao) continue;
+    if (prev && prev.sig === base.sig && prev.relacao && prev.por !== 'óbvio') continue;
     todo.push({ c, base });
   }
+  // pairs that are no longer candidates (rules changed, folder ignored or gone) are dropped,
+  // except the ones the person decided
+  const live = new Set(candidates.map((c) => c.key));
+  for (const k of Object.keys(data.pairs)) if (!live.has(k) && !data.pairs[k].pessoa) delete data.pairs[k];
   const queue = todo.slice(0, maxCalls);
   const stats = { candidatos: candidates.length, ia: queue.length, sim: 0, nao: 0, talvez: 0, falhou: 0 };
   let i = 0;

@@ -75,7 +75,7 @@ export function buildListingPrompt(project, s) {
  "agora": "em que ponto parece estar e o que parece faltar",
  "maturidade": "inacabado" | "quase resolvido" | "resolvido e funcional" | "não dá pra saber",
  "motivo": "por que essa maturidade, em uma frase"}
-Ex.: só brutos = inacabado; brutos + editado final/exportado = resolvido e funcional. Escreva em português simples. Não execute comandos nem abra arquivos.
+Ex.: só brutos = inacabado; brutos + editado final/exportado = resolvido e funcional; material entregue/publicado = resolvido e funcional. Dê sempre o seu melhor palpite pelos nomes e datas; use "não dá pra saber" só se a pasta não der nenhuma pista. Escreva em português simples. Não execute comandos nem abra arquivos.
 
 Projeto: ${project.name}
 Pasta: ${project.root_path}
@@ -136,7 +136,7 @@ export async function describeProjects({ projects, cachePath, command = DEFAULT_
     const docs = findDocs(p.root_path);
     const s = inventory[keyOf(p)];
     if (!docs.length && !(s && s.total > 0)) continue;
-    const key = docs.length ? docsKey(docs) : `lista:${s.total}:${s.newest}`;
+    const key = docs.length ? docsKey(docs) : `lista2:${s.total}:${s.newest}`;
     if (!force && cache[keyOf(p)]?.key === key && cache[keyOf(p)]?.desc) continue;
     todo.push({ p, docs, key, s });
   }

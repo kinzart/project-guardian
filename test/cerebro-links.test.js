@@ -31,7 +31,7 @@ test('links: tokens skip generic words and accents', () => {
 test('links: identical files and equal names are obvious; shared name + days are likely', () => {
   const c = findCandidates(projects, inv);
   const by = (x, y) => c.find((k) => [k.a.id, k.b.id].sort().join() === [x, y].sort().join());
-  assert.equal(by('f', 'g').level, 'obvio');
+  assert.equal(by('f', 'g').level, 'provavel'); // identical files but no name in common: AI decides
   assert.equal(by('f', 'g').sharedFiles, 3);
   assert.equal(by('a', 'b').level, 'obvio');
   assert.equal(by('c', 'd').level, 'provavel');
@@ -47,11 +47,11 @@ test('links: AI decides likely pairs, second opinion on "talvez", person decides
     const run = async (cmd) => { calls.push(cmd); return { ok: true, out: cmd === 'luna' ? 'x {"relacao":"talvez","motivo":"pode ser"} y' : '{"relacao":"talvez","motivo":"incerto"}' }; };
     const c = findCandidates(projects, inv);
     const stats = await decideLinks({ candidates: c, cachePath, inv, command: 'luna', secondCommand: 'forte', run });
-    assert.equal(stats.talvez, 1); assert.deepEqual(calls, ['luna', 'forte']);
+    assert.equal(stats.talvez, 2); assert.equal(calls.filter((c) => c === 'forte').length, 2);
     let data = loadLinks(cachePath);
-    assert.equal(linksByProject(data, projects).get('f')[0].q.id, 'g');
+    assert.equal(linksByProject(data, projects).get('a')[0].q.id, 'b');
     const link = (p) => `[[${p.name}]]`;
-    assert.equal(renderAcertos({ file: acertos, data, projects, link }), 1);
+    assert.equal(renderAcertos({ file: acertos, data, projects, link }), 2);
     const text = readFileSync(acertos, 'utf8');
     assert.match(text, /- \[ \] \[\[SHOW LUSCO\]\]/); assert.match(text, /- \[ \] nenhum · `-`/);
     writeFileSync(acertos, text.replace('- [ ] [[SHOW LUSCO]]', '- [x] [[SHOW LUSCO]]'));
@@ -59,9 +59,9 @@ test('links: AI decides likely pairs, second opinion on "talvez", person decides
     assert.equal(linksByProject(data, projects).get('c')[0].q.id, 'd');
     // a re-run keeps the person's decision and asks no AI
     const again = await decideLinks({ candidates: c, cachePath: path.join(dir, 'l2.json'), inv, command: 'luna', run });
-    assert.equal(again.ia, 1);
+    assert.equal(again.ia, 2);
     data.pairs[Object.keys(data.pairs).find((k) => data.pairs[k].pessoa)].sig = 'x';
-    assert.equal(renderAcertos({ file: acertos, data, projects, link }), 0);
+    assert.equal(renderAcertos({ file: acertos, data, projects, link }), 1);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

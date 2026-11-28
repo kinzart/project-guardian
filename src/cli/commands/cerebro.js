@@ -11,9 +11,22 @@ import { cleanup, cleanupTriage, readTriageItems } from '../../cerebro/cleanup.j
 import { groupProjects } from '../../cerebro/grouping.js';
 import { describeProjects, DEFAULT_DESCRIBE_COMMAND, loadDescriptions, descriptionFor } from '../../cerebro/describe.js';
 import { findCandidates, decideLinks } from '../../cerebro/links.js';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 
 export const SECOND_OPINION_COMMAND = 'codex exec --skip-git-repo-check -s read-only -c model_reasoning_effort="low" -';
+// Projects the person marked "ignorar" (programs, system folders) are left out of the links.
+function ignoredPaths(vault) {
+  const out = new Set();
+  const dir = vault ? path.join(vault, 'Project Guardian', 'Projetos') : null;
+  if (!dir || !existsSync(dir)) return out;
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith('.md')) continue;
+    const text = readFileSync(path.join(dir, f), 'utf8').slice(0, 3000);
+    const c = /^caminho:\s*"(.*)"\s*$/m.exec(text);
+    if (c && /^ignorar:\s*true\s*$/m.test(text)) out.add(JSON.parse(`"${c[1]}"`).toLowerCase());
+  }
+  return out;
+}
 const loadInventory = (projectRoot) => { try { return JSON.parse(readFileSync(path.join(projectRoot, 'data', 'cerebro-inventario.json'), 'utf8')); } catch { return {}; } };
 async function groupedProjects({ projectRoot, store, config }) {
   const sessions = await indexSessions({ ...agentHomes(config), cachePath: path.join(projectRoot, 'data', 'agent-sessions.json') });
@@ -23,7 +36,8 @@ async function groupedProjects({ projectRoot, store, config }) {
 // Finds links between projects (names, identical files, shared days) and lets the AI decide the likely ones.
 export async function linkNow({ projectRoot, store, config, maxCalls = 400 }) {
   if (config.cerebro?.links === false) return null;
-  const projects = await groupedProjects({ projectRoot, store, config });
+  const ignored = ignoredPaths(config.obsidian?.vaultPath);
+  const projects = (await groupedProjects({ projectRoot, store, config })).filter((p) => !ignored.has(String(p.root_path).toLowerCase()));
   const inv = loadInventory(projectRoot);
   const descs = loadDescriptions(path.join(projectRoot, 'data', 'cerebro-descricoes.json'));
   const candidates = findCandidates(projects, inv, { minFileSize: 100 * 1024 });
@@ -132,7 +146,14 @@ export async function cerebroCommand({ projectRoot, args, store: suppliedStore =
     const store = suppliedStore || created.store;
     try {
       if (action === 'limpar') return await limpar({ projectRoot, store, config, confirm: args.includes('--confirmar') });
-      if (action === 'descrever' || action === 'ligar') {
+      if (action === 'ligar') {
+        const n = args.find((a) => /^\d+$/.test(a));
+        const stats = await linkNow({ projectRoot, store, config, maxCalls: n ? Number(n) : 400 });
+        if (config.obsidian?.vaultPath) await obsidianCommand({ projectRoot, args: ['render'], store, config });
+        console.log(`Cérebro ligar: ${JSON.stringify(stats)}`);
+        return stats;
+      }
+      if (action === 'descrever') {
         const n = args.find((a) => /^\d+$/.test(a));
         const stats = await describeNow({ projectRoot, store, config, force: args.includes('--todos'), maxProjects: n ? Number(n) : 0 });
         if (stats?.done && config.obsidian?.vaultPath) await obsidianCommand({ projectRoot, args: ['render'], store, config });
